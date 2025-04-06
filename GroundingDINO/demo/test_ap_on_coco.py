@@ -2,11 +2,12 @@ import argparse
 import os
 import sys
 import time
+from tqdm import tqdm
 
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, Subset
 
 from groundingdino.models import build_model
 import groundingdino.datasets.transforms as T
@@ -140,6 +141,7 @@ class PostProcessCocoGrounding(nn.Module):
 def main(args):
     # config
     cfg = SLConfig.fromfile(args.config_file)
+    n = args.num_sample
 
     # build model
     model = load_model(args.config_file, args.checkpoint_path)
@@ -158,7 +160,8 @@ def main(args):
         args.image_dir, args.anno_path, transforms=transform)
     data_loader = DataLoader(
         dataset, batch_size=1, shuffle=False, num_workers=args.num_workers, collate_fn=collate_fn)
-
+    if n == -1:
+        n = len(dataset)
     # build post processor
     tokenlizer = get_tokenlizer.get_tokenlizer(cfg.text_encoder_type)
     postprocessor = PostProcessCocoGrounding(
@@ -174,29 +177,29 @@ def main(args):
     caption = " . ".join(cat_list) + ' .'
     print("Input text prompt:", caption)
 
-    # run inference
-    start = time.time()
-    for i, (images, targets) in enumerate(data_loader):
-        # get images and captions
-        images = images.tensors.to(args.device)
-        bs = images.shape[0]
-        input_captions = [caption] * bs
 
-        # feed to the model
-        outputs = model(images, captions=input_captions)
+    with tqdm(total=n, desc="Process") as pbar:
+        # run inference
 
-        orig_target_sizes = torch.stack(
-            [t["orig_size"] for t in targets], dim=0).to(images.device)
-        results = postprocessor(outputs, orig_target_sizes)
-        cocogrounding_res = {
-            target["image_id"]: output for target, output in zip(targets, results)}
-        evaluator.update(cocogrounding_res)
+        for i, (images, targets) in enumerate(data_loader):
+            if i >= n:
+                break
+            # get images and captions
+            images = images.tensors.to(args.device)
+            bs = images.shape[0]
+            input_captions = [caption] * bs
 
-        if (i+1) % 30 == 0:
-            used_time = time.time() - start
-            eta = len(data_loader) / (i+1e-5) * used_time - used_time
-            print(
-                f"processed {i}/{len(data_loader)} images. time: {used_time:.2f}s, ETA: {eta:.2f}s")
+            # feed to the model
+            outputs = model(images, captions=input_captions)
+
+            orig_target_sizes = torch.stack(
+                [t["orig_size"] for t in targets], dim=0).to(images.device)
+            results = postprocessor(outputs, orig_target_sizes)
+            cocogrounding_res = {
+                target["image_id"]: output for target, output in zip(targets, results)}
+            evaluator.update(cocogrounding_res)
+
+            pbar.update(1)
 
     evaluator.synchronize_between_processes()
     evaluator.accumulate()
@@ -228,6 +231,8 @@ if __name__ == "__main__":
                         required=True, help="coco image dir")
     parser.add_argument("--num_workers", type=int, default=4,
                         help="number of workers for dataloader")
+    parser.add_argument("--num_sample", type=int, default=-1,
+                        help="number of test samples")
     args = parser.parse_args()
 
     main(args)

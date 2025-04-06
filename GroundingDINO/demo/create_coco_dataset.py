@@ -7,16 +7,16 @@ import fiftyone as fo
 
 
 def main(
-        image_directory: str = 'test_grounding_dino',
-        text_prompt: str = 'bus, car',
-        box_threshold: float = 0.15, 
+        image_directory: str = '../validation',
+        text_prompt: str = 'car. person. animals.',
+        box_threshold: float = 0.40,
         text_threshold: float = 0.10,
         export_dataset: bool = False,
         view_dataset: bool = False,
         export_annotated_images: bool = True,
-        weights_path : str = "groundingdino_swint_ogc.pth",
-        config_path: str = "../../GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py",
-        subsample: int = None,
+        weights_path : str = "../groundingdino/weights/groundingdino_swinb_cogcoor.pth",
+        config_path: str = "../groundingdino/config/GroundingDINO_SwinB_cfg.py",
+        subsample: int = 10,
     ):
 
     model = load_model(config_path, weights_path)

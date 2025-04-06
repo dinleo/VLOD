@@ -12,7 +12,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+GroundingDINO/build/
 develop-eggs/
 dist/
 downloads/
@@ -144,3 +144,10 @@ grounding/version.py
 
 vis/
 tmp/
+
+datasets/
+GroundingDINO/groundingdino/weights/
+test.*
+/GroundingDINO/groundingdino/weights/
+/GroundingDINO/data/
+/GroundingDINO/demo/images_with_bounding_boxes/

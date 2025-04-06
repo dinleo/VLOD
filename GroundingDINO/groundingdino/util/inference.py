@@ -113,7 +113,10 @@ def annotate(image_source: np.ndarray, boxes: torch.Tensor, logits: torch.Tensor
     h, w, _ = image_source.shape
     boxes = boxes * torch.Tensor([w, h, w, h])
     xyxy = box_convert(boxes=boxes, in_fmt="cxcywh", out_fmt="xyxy").numpy()
-    detections = sv.Detections(xyxy=xyxy)
+    class_name_to_id = {name: idx for idx, name in enumerate(sorted(set(phrases)))}
+    class_ids = np.array([class_name_to_id[name] for name in phrases])
+
+    detections = sv.Detections(xyxy=xyxy, class_id=class_ids)
 
     labels = [
         f"{phrase} {logit:.2f}"
@@ -121,8 +124,8 @@ def annotate(image_source: np.ndarray, boxes: torch.Tensor, logits: torch.Tensor
         in zip(phrases, logits)
     ]
 
-    bbox_annotator = sv.BoxAnnotator(color_lookup=sv.ColorLookup.INDEX)
-    label_annotator = sv.LabelAnnotator(color_lookup=sv.ColorLookup.INDEX, text_scale=0.4, text_padding=5)
+    bbox_annotator = sv.BoxAnnotator(thickness=1)
+    label_annotator = sv.LabelAnnotator(text_scale=0.4, text_padding=5)
     annotated_frame = cv2.cvtColor(image_source, cv2.COLOR_RGB2BGR)
     annotated_frame = bbox_annotator.annotate(scene=annotated_frame, detections=detections)
     annotated_frame = label_annotator.annotate(scene=annotated_frame, detections=detections, labels=labels)
