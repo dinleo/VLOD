@@ -8,7 +8,7 @@ sub = os.getenv('SUB')
 api = HfApi()
 
 print(api.hf_hub_download(
-    local_dir='/',
+    local_dir='',
     repo_id="dinleo11/VLOD",
     subfolder=f"{sub}/weights",
     filename="org_b.pth",
