@@ -16,6 +16,8 @@ in the end of the file, as python3 can suppress prints with contextlib
 import contextlib
 import copy
 import os
+import pickle
+import json
 
 import numpy as np
 import pycocotools.mask as mask_util
@@ -76,6 +78,56 @@ class CocoGroundingEvaluator(object):
         for iou_type, coco_eval in self.coco_eval.items():
             print("IoU metric: {}".format(iou_type))
             coco_eval.summarize()
+
+    def print_classwise_ap(self, iou_type="bbox", area_idx=0, max_det_idx=2):
+        """
+        클래스별 AP를 출력합니다.
+        - iou_type: 'bbox', 'segm', 'keypoints' 중 선택
+        - area_idx: 0=all, 1=small, 2=medium, 3=large
+        - max_det_idx: 0=1, 1=10, 2=100
+        """
+        from collections import OrderedDict
+
+        if iou_type not in self.coco_eval:
+            print(f"IoU type '{iou_type}' is not available.")
+            return
+
+        coco_eval = self.coco_eval[iou_type]
+        precision = coco_eval.eval["precision"]  # [T, R, K, A, M]
+        cat_ids = coco_eval.params.catIds
+        cat_id_to_name = {cat["id"]: cat["name"] for cat in self.coco_gt.loadCats(cat_ids)}
+
+        result = OrderedDict()
+
+        for idx, cat_id in enumerate(cat_ids):
+            prec = precision[:, :, idx, area_idx, max_det_idx]
+            prec = prec[prec > -1]
+            ap = np.mean(prec) if prec.size > 0 else float("nan")
+            result[cat_id_to_name[cat_id]] = ap
+
+        print(f"\n=== Per-Class AP (IoU type: {iou_type}) ===")
+        for name, ap in result.items():
+            print(f"{name:20}: {ap:.4f}")
+
+    def save_coco_eval_pickle(self):
+        for iou_type, coco_eval in self.coco_eval.items():
+            path = os.path.join(f"output/coco_eval_{iou_type}.pkl")
+            with open(path, "wb") as f:
+                pickle.dump(coco_eval, f)
+
+    def save_coco_eval_json(self):
+        output = {}
+        for iou_type, coco_eval in self.coco_eval.items():
+            precision = coco_eval.eval["precision"]  # [T, R, K, A, M]
+            recall = coco_eval.eval["recall"]  # [T, K, A, M]
+
+            output[iou_type] = {
+                "precision_mean": float(np.mean(precision[precision > -1])),
+                "recall_mean": float(np.mean(recall[recall > -1])),
+            }
+
+        with open("output/eval_summary.json", "w") as f:
+            json.dump(output, f, indent=2)
 
     def prepare(self, predictions, iou_type):
         if iou_type == "bbox":
