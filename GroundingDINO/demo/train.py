@@ -1,6 +1,7 @@
 import argparse
 import os
 import torch
+torch.set_printoptions(sci_mode=False, precision=4)
 import torch.nn as nn
 import torch.optim as optim
 from dotenv import load_dotenv
@@ -122,7 +123,7 @@ def hungarian(outputs, targets,
         dt_boxes = dt_boxes_batch[b]       # (N, 4)
         dt_probs = dt_probs_batch[b]       # (N, C)
         tgt = targets[b]
-        img_h, img_w = tgt["orig_size"]
+        img_h, img_w = map(float, tgt["orig_size"])
         dt_boxes[:, [0, 2]] /= img_w
         dt_boxes[:, [1, 3]] /= img_h
 
@@ -194,7 +195,7 @@ def criterion(results, targets, cls_weight=1.0, l1_weight=5.0, giou_weight=2.0):
         dt_boxes = results["boxes"][b]  # [N, 4]
         dt_logits = results["prob"][b]  # [N, C]
         tgt = targets[b]
-        img_h, img_w = tgt["orig_size"]
+        img_h, img_w = map(float, tgt["orig_size"])
 
         matched_inds = match
         if matched_inds.numel() == 0:
@@ -215,7 +216,8 @@ def criterion(results, targets, cls_weight=1.0, l1_weight=5.0, giou_weight=2.0):
         pred_logits = dt_logits[dt_inds]  # [M, C]
 
         # Classification Loss (Cross Entropy)
-        loss_cls = F.cross_entropy(pred_logits, tgt_labels, reduction='sum')
+        tgt_onehot = F.one_hot(tgt_labels, num_classes=92).float()
+        loss_cls = F.binary_cross_entropy(pred_logits, tgt_onehot, reduction='mean')
 
         # Box L1 Loss
         loss_bbox = F.l1_loss(pred_boxes, tgt_boxes, reduction='sum')
