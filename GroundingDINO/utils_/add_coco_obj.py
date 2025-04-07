@@ -33,6 +33,6 @@ coco.dataset["annotations"].extend(new)
 coco.createIndex()
 print(len(coco.dataset["annotations"]))
 import json
-with open(working_root + "annotations/labels.json", "w") as f:
+with open(working_root + "/annotations/labels.json", "w") as f:
     json.dump(coco.dataset, f, indent=2)
 
