@@ -227,9 +227,9 @@ def criterion(results, targets, cls_weight=100.0, l1_weight=2.0, giou_weight=2.0
         loss_giou = 1.0 - torch.diag(giou)  # GIoU → 1 - GIoU
         loss_giou = loss_giou.sum()
 
-        total_cls_loss += loss_cls
-        total_l1_loss += loss_bbox
-        total_giou_loss += loss_giou
+        total_cls_loss += loss_cls * cls_weight
+        total_l1_loss += loss_bbox * l1_weight
+        total_giou_loss += loss_giou * giou_weight
         num_boxes += len(gt_inds)
 
     # normalize by number of boxes
@@ -238,7 +238,7 @@ def criterion(results, targets, cls_weight=100.0, l1_weight=2.0, giou_weight=2.0
     total_l1_loss = total_l1_loss / num_boxes
     total_giou_loss = total_giou_loss / num_boxes
 
-    total = cls_weight * total_cls_loss + l1_weight * total_l1_loss + giou_weight * total_giou_loss
+    total = total_cls_loss + total_l1_loss + total_giou_loss
 
     return {
         "loss_cls": total_cls_loss,
