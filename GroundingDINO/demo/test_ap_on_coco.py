@@ -204,8 +204,6 @@ def main(args):
     evaluator.synchronize_between_processes()
     evaluator.accumulate()
     evaluator.summarize()
-    evaluator.print_classwise_ap()
-    evaluator.save_coco_eval_pickle()
     evaluator.save_coco_eval_json()
 
     print("Final results:", evaluator.coco_eval["bbox"].stats.tolist())
