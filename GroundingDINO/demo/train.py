@@ -114,14 +114,17 @@ def hungarian(outputs, targets,
         list of Tensors: 각 GT에 대응하는 DT 인덱스
     """
     bs = outputs["boxes"].shape[0]
-    dt_boxes_batch = outputs["boxes"]
-    dt_probs_batch = outputs["prob"]
+    dt_boxes_batch = outputs["boxes"].clone()
+    dt_probs_batch = outputs["prob"].clone()
     matched_indices = []
 
     for b in range(bs):
         dt_boxes = dt_boxes_batch[b]       # (N, 4)
         dt_probs = dt_probs_batch[b]       # (N, C)
         tgt = targets[b]
+        img_h, img_w = tgt["orig_size"]
+        dt_boxes[:, [0, 2]] /= img_w
+        dt_boxes[:, [1, 3]] /= img_h
 
         tgt_boxes = box_ops.box_cxcywh_to_xyxy(tgt["boxes"].to(dt_boxes.device))  # (M, 4)
         tgt_labels = torch.as_tensor(tgt["labels"], device=dt_boxes.device)       # (M,)
@@ -190,8 +193,8 @@ def criterion(results, targets, cls_weight=1.0, l1_weight=5.0, giou_weight=2.0):
     for b, match in enumerate(matching):
         dt_boxes = results["boxes"][b]  # [N, 4]
         dt_logits = results["prob"][b]  # [N, C]
-        gt = targets[b]
-        img_h, img_w = gt["orig_size"]
+        tgt = targets[b]
+        img_h, img_w = tgt["orig_size"]
 
         matched_inds = match
         if matched_inds.numel() == 0:
@@ -204,11 +207,11 @@ def criterion(results, targets, cls_weight=1.0, l1_weight=5.0, giou_weight=2.0):
         dt_inds = matched_inds[valid_mask]
 
         # 각 GT에 대한 예측 box, label, logit 추출
-        tgt_boxes = box_ops.box_cxcywh_to_xyxy(gt["boxes"].to(device)[gt_inds])  # GT: [M, 4] → xyxy
+        tgt_boxes = box_ops.box_cxcywh_to_xyxy(tgt["boxes"].to(device)[gt_inds])  # GT: [M, 4] → xyxy
         pred_boxes = dt_boxes[dt_inds]  # [M, 4]
         pred_boxes[:, [0, 2]] /= img_w
         pred_boxes[:, [1, 3]] /= img_h
-        tgt_labels = torch.as_tensor(gt["labels"], device=device)[gt_inds]  # [M]
+        tgt_labels = torch.as_tensor(tgt["labels"], device=device)[gt_inds]  # [M]
         pred_logits = dt_logits[dt_inds]  # [M, C]
 
         # Classification Loss (Cross Entropy)
