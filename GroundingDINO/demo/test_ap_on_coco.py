@@ -74,16 +74,18 @@ class PostProcessCocoGrounding(nn.Module):
         assert coco_api is not None
         category_dict = coco_api.dataset['categories']
         cat_list = [item['name'] for item in category_dict]
+        cat_list.append("object")
         captions, cat2tokenspan = build_captions_and_token_span(cat_list, True)
         tokenspanlist = [cat2tokenspan[cat] for cat in cat_list]
         positive_map = create_positive_map_from_span(
             tokenlizer(captions), tokenspanlist)  # 80, 256. normed
 
         id_map = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9, 9: 10, 10: 11, 11: 13, 12: 14, 13: 15, 14: 16, 15: 17, 16: 18, 17: 19, 18: 20, 19: 21, 20: 22, 21: 23, 22: 24, 23: 25, 24: 27, 25: 28, 26: 31, 27: 32, 28: 33, 29: 34, 30: 35, 31: 36, 32: 37, 33: 38, 34: 39, 35: 40, 36: 41, 37: 42, 38: 43, 39: 44, 40: 46,
-                  41: 47, 42: 48, 43: 49, 44: 50, 45: 51, 46: 52, 47: 53, 48: 54, 49: 55, 50: 56, 51: 57, 52: 58, 53: 59, 54: 60, 55: 61, 56: 62, 57: 63, 58: 64, 59: 65, 60: 67, 61: 70, 62: 72, 63: 73, 64: 74, 65: 75, 66: 76, 67: 77, 68: 78, 69: 79, 70: 80, 71: 81, 72: 82, 73: 84, 74: 85, 75: 86, 76: 87, 77: 88, 78: 89, 79: 90}
+                  41: 47, 42: 48, 43: 49, 44: 50, 45: 51, 46: 52, 47: 53, 48: 54, 49: 55, 50: 56, 51: 57, 52: 58, 53: 59, 54: 60, 55: 61, 56: 62, 57: 63, 58: 64, 59: 65, 60: 67, 61: 70, 62: 72, 63: 73, 64: 74, 65: 75, 66: 76, 67: 77, 68: 78, 69: 79, 70: 80, 71: 81, 72: 82, 73: 84, 74: 85, 75: 86, 76: 87, 77: 88, 78: 89, 79: 90
+                  , 80:91}
 
         # build a mapping from label_id to pos_map
-        new_pos_map = torch.zeros((91, 256))
+        new_pos_map = torch.zeros((92, 256))
         for k, v in id_map.items():
             new_pos_map[v] = positive_map[k]
         self.positive_map = new_pos_map
@@ -101,9 +103,9 @@ class PostProcessCocoGrounding(nn.Module):
         out_logits, out_bbox = outputs['pred_logits'], outputs['pred_boxes']
 
         # pos map to logit
-        prob_to_token = out_logits.sigmoid()  # bs, 100, 256
+        prob_to_token = out_logits.sigmoid()  # bs, 900, 256
         pos_maps = self.positive_map.to(prob_to_token.device)
-        # (bs, 100, 256) @ (91, 256).T -> (bs, 100, 91)
+        # (bs, 900, 256) @ (91, 256).T -> (bs, 900, 91)
         prob_to_label = prob_to_token @ pos_maps.T
 
         # if os.environ.get('IPDB_SHILONG_DEBUG', None) == 'INFO':
@@ -174,7 +176,7 @@ def main(args):
     # build captions
     category_dict = dataset.coco.dataset['categories']
     cat_list = [item['name'] for item in category_dict]
-    caption = " . ".join(cat_list) + ' .'
+    caption = " . ".join(cat_list) + ' . object .'
     print("Input text prompt:", caption)
 
 
