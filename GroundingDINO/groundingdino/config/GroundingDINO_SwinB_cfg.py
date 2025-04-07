@@ -1,4 +1,3 @@
-batch_size = 1
 modelname = "groundingdino"
 backbone = "swin_B_384_22k"
 position_embedding = "sine"
@@ -41,3 +40,12 @@ text_dropout = 0.0
 fusion_dropout = 0.0
 fusion_droppath = 0.1
 sub_sentence_present = True
+lr = 1e-4
+weight_decay = 0.0001
+wandb_entity="dinleo11"
+wandb_project="vlod"
+wandb_name="train"
+batch_size = 5
+max_step=20000
+log_frq=100
+save_frq=5000

@@ -32,9 +32,9 @@ def load_model(model_config_path: str, model_checkpoint_path: str, device: str =
     return model
 
 def find_coco_id(coco_cat: dict, name: str):
-    for cat_id, cat_info in coco_cat.items():
+    for _, cat_info in coco_cat.items():
         if cat_info["name"].lower() == name.lower():
-            return cat_id
+            return cat_info["id"]
     return 0
 
 
@@ -58,11 +58,13 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         # filt invalid boxes/masks/keypoints
         keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
         boxes = boxes[keep]
+        labels = [obj["category_id"] for obj in target]
 
         target_new = {}
         image_id = self.ids[idx]
         target_new["image_id"] = image_id
         target_new["boxes"] = boxes
+        target_new["labels"] = labels
         target_new["orig_size"] = torch.as_tensor([int(h), int(w)])
 
         if self._transforms is not None:
