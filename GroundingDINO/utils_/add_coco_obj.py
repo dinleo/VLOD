@@ -5,6 +5,7 @@ import os
 
 load_dotenv()
 coco_root = os.getenv('COCODATA')
+working_root = os.getenv('WORKING')
 
 
 # 기존 COCO 객체: coco (type: pycocotools.coco.COCO)
@@ -32,6 +33,6 @@ coco.dataset["annotations"].extend(new)
 coco.createIndex()
 print(len(coco.dataset["annotations"]))
 import json
-with open(coco_root + "/annotations/labels.json", "w") as f:
+with open(working_root + "annotations/labels.json", "w") as f:
     json.dump(coco.dataset, f, indent=2)
 
