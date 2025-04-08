@@ -47,5 +47,5 @@ wandb_project="vlod"
 wandb_name="train_new"
 batch_size = 3
 max_step=10000
-log_frq=1
+log_frq=50
 save_frq=2000
