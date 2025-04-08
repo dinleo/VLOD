@@ -166,7 +166,7 @@ def hungarian(outputs, targets,
 
     return matched_indices
 
-def criterion(results, targets, cls_weight=100.0, l1_weight=2.0, giou_weight=0.5):
+def criterion(results, targets, cls_weight=1.0, l1_weight=2.0, giou_weight=0.5):
 
     """
        Hungarian 매칭 결과를 바탕으로 classification + box (L1 + GIoU) loss 계산.
@@ -217,7 +217,8 @@ def criterion(results, targets, cls_weight=100.0, l1_weight=2.0, giou_weight=0.5
 
         # Classification Loss (Cross Entropy)
         tgt_onehot = F.one_hot(tgt_labels, num_classes=92).float()
-        loss_cls = F.binary_cross_entropy(pred_logits, tgt_onehot, reduction='mean')
+        cls_cost = pred_logits * tgt_onehot
+        loss_cls = - cls_cost.sum()
 
         # Box L1 Loss
         loss_bbox = F.l1_loss(pred_boxes, tgt_boxes, reduction='sum')
