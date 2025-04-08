@@ -166,7 +166,7 @@ def hungarian(outputs, targets,
 
     return matched_indices
 
-def criterion(results, targets, cls_weight=0.05, bbox_weight=10.0, giou_weight=1.0):
+def criterion(results, targets, cls_weight=0.1, bbox_weight=2.0, giou_weight=1.0):
 
     """
        Hungarian 매칭 결과를 바탕으로 classification + box (L1 + GIoU) loss 계산.
