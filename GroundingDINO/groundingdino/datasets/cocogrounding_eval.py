@@ -79,7 +79,7 @@ class CocoGroundingEvaluator(object):
             print("IoU metric: {}".format(iou_type))
             coco_eval.summarize()
 
-    def save_coco_eval_json(self):
+    def save_coco_eval_json(self, filename="eval_summary"):
         output = {}
         for iou_type, coco_eval in self.coco_eval.items():
             metrics = {
@@ -119,8 +119,9 @@ class CocoGroundingEvaluator(object):
             for name, ap in class_res.items():
                 print(f"{name:20}: {ap:.4f}")
             output["class_ap"] = class_res
-
-        with open("output/eval_summary.json", "w") as f:
+        output_dir = f"output/{filename}" + ".json"
+        os.makedirs(os.path.dirname(output_dir), exist_ok=True)
+        with open(output_dir, "w") as f:
             json.dump(output, f, indent=2)
 
     def prepare(self, predictions, iou_type):

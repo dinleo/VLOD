@@ -173,6 +173,9 @@ def main(args):
         dataset, batch_size=1, shuffle=False, num_workers=args.num_workers, collate_fn=collate_fn)
     if n == -1:
         n = len(dataset)
+    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "/" + args.anno_path.split("/")[-1].split(".")[
+        -2] + "_" + str(n)
+    print(save_name)
     # build post processor
     category_dict = dataset.coco.dataset['categories']
     cat_list = [item['name'] for item in category_dict]
@@ -217,7 +220,7 @@ def main(args):
     evaluator.synchronize_between_processes()
     evaluator.accumulate()
     evaluator.summarize()
-    evaluator.save_coco_eval_json()
+    evaluator.save_coco_eval_json(save_name)
 
 
 if __name__ == "__main__":
