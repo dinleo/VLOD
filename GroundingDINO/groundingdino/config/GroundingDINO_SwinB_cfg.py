@@ -48,4 +48,4 @@ wandb_name="train_new"
 batch_size = 3
 max_step=10000
 log_frq=10
-save_frq=2000
+save_frq=1000
