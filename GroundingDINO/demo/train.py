@@ -279,6 +279,7 @@ class Trainer:
         self.model.train()
         total_loss = 0
         print("Total Len:" , len(dataloader))
+        print("cat list", self.category_dict)
 
         with tqdm(total=max_step, desc="Process") as pbar:
             for images, targets in dataloader:

@@ -5,4 +5,4 @@ mkdir -p output
 mkdir -p annotations
 python utils_/hf_down.py --sub $SUB --filename $CKPT
 mv $SUB/weights output/weights
-python utils_/coco_only.py
+python utils_/coco_add.py
