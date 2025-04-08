@@ -166,7 +166,7 @@ def hungarian(outputs, targets,
 
     return matched_indices
 
-def criterion(results, targets, cls_weight=0.1, l1_weight=2.0, giou_weight=1.0):
+def criterion(results, targets, cls_weight=0.05, bbox_weight=10.0, giou_weight=1.0):
 
     """
        Hungarian 매칭 결과를 바탕으로 classification + box (L1 + GIoU) loss 계산.
@@ -193,7 +193,7 @@ def criterion(results, targets, cls_weight=0.1, l1_weight=2.0, giou_weight=1.0):
     matching = hungarian(results, targets, giou_weight)
     for b, match in enumerate(matching):
         dt_boxes = results["boxes"][b]  # [N, 4]
-        dt_logits = results["prob"][b]  # [N, C]
+        dt_prob = results["prob"][b]  # [N, C]
         tgt = targets[b]
         img_h, img_w = map(float, tgt["orig_size"])
 
@@ -205,15 +205,14 @@ def criterion(results, targets, cls_weight=0.1, l1_weight=2.0, giou_weight=1.0):
             continue
 
         gt_inds = torch.arange(len(matched_inds), device=device)[valid_mask]
-        dt_inds = matched_inds[valid_mask]
+        dt_match_inds = matched_inds[valid_mask]
 
-        # 각 GT에 대한 예측 box, label, logit 추출
+        # 각 GT에 대한 예측 box, label, prob 추출
         tgt_boxes = box_ops.box_cxcywh_to_xyxy(tgt["boxes"].to(device)[gt_inds])  # GT: [M, 4] → xyxy
-        pred_boxes = dt_boxes[dt_inds]  # [M, 4]
+        pred_boxes = dt_boxes[dt_match_inds]  # [M, 4]
         pred_boxes[:, [0, 2]] /= img_w
         pred_boxes[:, [1, 3]] /= img_h
         tgt_labels = torch.as_tensor(tgt["labels"], device=device)[gt_inds]  # [M]
-        pred_prob = dt_logits[dt_inds]  # [M, C]
 
         # Classification Loss (B-Cross Entropy)
 
@@ -222,14 +221,14 @@ def criterion(results, targets, cls_weight=0.1, l1_weight=2.0, giou_weight=1.0):
         lb_to_cls = {c.item(): i for i, c in enumerate(class_sets)}
 
         # DT
-        selected_probs = pred_prob[:, class_sets]
+        selected_probs = dt_prob[:, class_sets] # [N, prompt C]
+        N, C = selected_probs.shape
         # GT
-        target_ohv = torch.zeros_like(selected_probs)  # [M, K]
-        for i, lbl in enumerate(tgt_labels):
-            idx = lb_to_cls[lbl.item()]
-            target_ohv[i, idx] = 1.0
+        target_mask = torch.zeros((N, C), device=device) # [N, prompt C]
+        gt_prompt_indices = torch.tensor([lb_to_cls[l.item()] for l in tgt_labels], device=device)
+        target_mask[dt_match_inds, gt_prompt_indices] = 1.0
 
-        loss_cls = F.binary_cross_entropy(selected_probs, target_ohv, reduction='sum')
+        loss_cls = F.binary_cross_entropy(selected_probs, target_mask, reduction='sum')
 
         # Box L1 Loss
         loss_bbox = F.l1_loss(pred_boxes, tgt_boxes, reduction='sum')
@@ -240,7 +239,7 @@ def criterion(results, targets, cls_weight=0.1, l1_weight=2.0, giou_weight=1.0):
         loss_giou = loss_giou.sum()
 
         total_cls_loss += loss_cls * cls_weight
-        total_l1_loss += loss_bbox * l1_weight
+        total_l1_loss += loss_bbox * bbox_weight
         total_giou_loss += loss_giou * giou_weight
         num_boxes += len(gt_inds)
 

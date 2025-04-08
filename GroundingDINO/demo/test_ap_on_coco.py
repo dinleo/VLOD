@@ -7,6 +7,7 @@ from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
+torch.set_printoptions(sci_mode=False, precision=4)
 from torch.utils.data import DataLoader, DistributedSampler, Subset
 
 from groundingdino.models import build_model
@@ -144,14 +145,16 @@ class PostProcessCocoGrounding(nn.Module):
 
         boxes = torch.gather(
             boxes, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
+        topk_prob = torch.gather(
+            prob, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 92))
 
         # and from relative [0, 1] to absolute [0, height] coordinates
         img_h, img_w = target_sizes.unbind(1)
         scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
         boxes = boxes * scale_fct[:, None, :]
 
-        results = [{'scores': s, 'labels': l, 'boxes': b}
-                   for s, l, b in zip(scores, labels, boxes)]
+        results = [{'scores': s, 'labels': l, 'boxes': b, 'prob': p}
+                   for s, l, b, p in zip(scores, labels, boxes, topk_prob)]
 
         return results
 
@@ -209,7 +212,7 @@ def main(args):
             captions, cat_lists = [], []
             for target in targets:
                 cap, cat_list = create_caption_from_labels(id2name, target["labels"])
-                if cfg.all_cap:
+                if cfg.tg_cat_only:
                     captions.append(caption_tgt)
                     cat_lists.append(cat_list_tgt)
                 else:
