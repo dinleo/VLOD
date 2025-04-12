@@ -75,6 +75,7 @@ class COCOeval:
         self.params = Params(iouType=iouType) # parameters
         self._paramsEval = {}               # parameters for evaluation
         self.stats = []                     # result summarization
+        self.stats_dict = {}                # result summarization dict
         self.ious = {}                      # ious between all gts and dts
         if not cocoGt is None:
             self.params.imgIds = sorted(cocoGt.getImgIds())
@@ -334,6 +335,9 @@ class COCOeval:
         precision   = -np.ones((T,R,K,A,M)) # -1 for the precision of absent categories
         recall      = -np.ones((T,K,A,M))
         scores      = -np.ones((T,R,K,A,M))
+        tp_counts = -np.ones((T,K,A,M))
+        fp_counts = -np.ones((T,K,A,M))
+        fn_counts = -np.ones((T,K,A,M))
 
         # create dictionary for future indexing
         _pe = self._paramsEval
@@ -385,12 +389,18 @@ class COCOeval:
                         pr = tp / (fp+tp+np.spacing(1))
                         q  = np.zeros((R,))
                         ss = np.zeros((R,))
-
                         if nd:
                             recall[t,k,a,m] = rc[-1]
+                            tp_final = tp[-1]
+                            fp_final = fp[-1]
                         else:
                             recall[t,k,a,m] = 0
-
+                            tp_final = 0
+                            fp_final = 0
+                        fn_final = npig - tp_final
+                        tp_counts[t, k, a, m] = tp_final
+                        fp_counts[t, k, a, m] = fp_final
+                        fn_counts[t, k, a, m] = fn_final
                         # numpy is slow without cython optimization for accessing elements
                         # use python array gets significant speed improvement
                         pr = pr.tolist(); q = q.tolist()
@@ -415,6 +425,9 @@ class COCOeval:
             'precision': precision,
             'recall':   recall,
             'scores': scores,
+            'tp': tp_counts,
+            'fp': fp_counts,
+            'fn': fn_counts,
         }
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format( toc-tic))
@@ -454,21 +467,66 @@ class COCOeval:
             else:
                 mean_s = np.mean(s[s>-1])
             print(iStr.format(titleStr, typeStr, iouStr, areaRng, maxDets, mean_s))
-            return mean_s
+
+            iouStr = f" (IoU={iouStr})" if iouThr is not None else ""
+            areaRng  = f" (area={areaRng})" if areaRng != "all" else ""
+            maxDets  = f" (maxDets={maxDets})" if maxDets != 100 else ""
+
+            con = f"{typeStr}{iouStr}{areaRng}{maxDets}"
+            return con, mean_s
+
+        def _compute_counts(iouThr=0.5, areaRng='all', maxDets=10):
+            p = self.params
+            typeStr = "TP FP FN"
+            iouStr = '{:0.2f}:{:0.2f}'.format(p.iouThrs[0], p.iouThrs[-1]) \
+                if iouThr is None else '{:0.2f}'.format(iouThr)
+
+            t_inds = slice(None) if iouThr is None else np.where(p.iouThrs == iouThr)[0][0]
+            a_inds = [i for i, aRng in enumerate(p.areaRngLbl) if aRng == areaRng][0]
+            m_inds = [i for i, mDet in enumerate(p.maxDets) if mDet == maxDets][0]
+
+            tp = self.eval.get("tp", None)[t_inds, :, a_inds, m_inds]
+            tp = tp[tp > -1]
+            fp = self.eval.get("fp", None)[t_inds, :, a_inds, m_inds]
+            fp = fp[fp > -1]
+            fn = self.eval.get("fn", None)[t_inds, :, a_inds, m_inds]
+            fn = fn[fn > -1]
+            # class wise sum
+            tp_sum = tp.sum()
+            fp_sum= fp.sum()
+            fn_sum = fn.sum()
+
+            iouStr = f" (IoU={iouStr})" if iouThr is not None else ""
+            areaRng = f" (area={areaRng})" if areaRng != "all" else ""
+            maxDets = f" (maxDets={maxDets})"
+            con = f"{typeStr}{iouStr}{areaRng}{maxDets}"
+
+            return con, [int(tp_sum), int(fp_sum), int(fn_sum)]
+
         def _summarizeDets():
             stats = np.zeros((12,))
-            stats[0] = _summarize(1)
-            stats[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[2])
-            stats[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[2])
-            stats[3] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[2])
-            stats[4] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[2])
-            stats[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[2])
-            stats[6] = _summarize(0, maxDets=self.params.maxDets[0])
-            stats[7] = _summarize(0, maxDets=self.params.maxDets[1])
-            stats[8] = _summarize(0, maxDets=self.params.maxDets[2])
-            stats[9] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[2])
-            stats[10] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[2])
-            stats[11] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
+            stats_dict = {}
+
+            for i, args in enumerate([
+                (1, None, 'all', self.params.maxDets[2]),
+                (1, 0.5, 'all', self.params.maxDets[2]),
+                (1, 0.75, 'all', self.params.maxDets[2]),
+                (1, None, 'small', self.params.maxDets[2]),
+                (1, None, 'medium', self.params.maxDets[2]),
+                (1, None, 'large', self.params.maxDets[2]),
+                (0, None, 'all', self.params.maxDets[0]),
+                (0, None, 'all', self.params.maxDets[1]),
+                (0, None, 'all', self.params.maxDets[2]),
+                (0, None, 'small', self.params.maxDets[2]),
+                (0, None, 'medium', self.params.maxDets[2]),
+                (0, None, 'large', self.params.maxDets[2]),
+            ]):
+                con, val = _summarize(*args)
+                stats[i] = val
+                stats_dict[con] = val
+            con, counts = _compute_counts()
+            stats_dict[con] = counts
+            self.stats_dict = stats_dict
             return stats
         def _summarizeKps():
             stats = np.zeros((10,))

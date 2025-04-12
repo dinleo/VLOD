@@ -51,4 +51,4 @@ test_batch = 1
 max_step=10000
 log_frq=10
 save_frq=500
-dev_test=True
+dev_test=False

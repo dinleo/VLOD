@@ -82,22 +82,7 @@ class CocoGroundingEvaluator(object):
     def save_coco_eval_json(self, filename="eval_summary"):
         output = {}
         for iou_type, coco_eval in self.coco_eval.items():
-            metrics = {
-                "AP (IoU=0.50:0.95)": coco_eval.stats[0],
-                "AP (IoU=0.50)": coco_eval.stats[1],
-                "AP (IoU=0.75)": coco_eval.stats[2],
-                "AP (small)": coco_eval.stats[3],
-                "AP (medium)": coco_eval.stats[4],
-                "AP (large)": coco_eval.stats[5],
-                "AR (maxDets=1)": coco_eval.stats[6],
-                "AR (maxDets=10)": coco_eval.stats[7],
-                "AR (maxDets=100)": coco_eval.stats[8],
-                "AR (small)": coco_eval.stats[9],
-                "AR (medium)": coco_eval.stats[10],
-                "AR (large)": coco_eval.stats[11],
-            }
-
-            output[iou_type] = metrics
+            output[iou_type] =  coco_eval.stats_dict
 
             precision = coco_eval.eval["precision"]  # [T, R, K, A, M]
             cat_ids = coco_eval.params.catIds
@@ -112,8 +97,11 @@ class CocoGroundingEvaluator(object):
             for idx, cat_id in enumerate(cat_ids):
                 prec = precision[:, :, idx, area_idx, max_det_idx]
                 prec = prec[prec > -1]
-                ap = np.mean(prec) if prec.size > 0 else float("nan")
-                class_res[cat_id_to_name[cat_id]] = ap
+                if prec.size > 0:
+                    ap = np.mean(prec)
+                    class_res[cat_id_to_name[cat_id]] = ap
+                else:
+                    continue
 
             print(f"\n=== Per-Class AP (IoU type: {iou_type}) ===")
             for name, ap in class_res.items():
