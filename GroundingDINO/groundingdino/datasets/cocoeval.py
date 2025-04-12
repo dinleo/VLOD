@@ -524,7 +524,11 @@ class COCOeval:
                 con, val = _summarize(*args)
                 stats[i] = val
                 stats_dict[con] = val
-            con, counts = _compute_counts()
+            con, counts = _compute_counts(maxDets=1)
+            stats_dict[con] = counts
+            con, counts = _compute_counts(maxDets=10)
+            stats_dict[con] = counts
+            con, counts = _compute_counts(maxDets=100)
             stats_dict[con] = counts
             self.stats_dict = stats_dict
             return stats
