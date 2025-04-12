@@ -4,4 +4,4 @@ python demo/test_ap_on_coco.py \
  -p output/weights/org_b.pth \
  --anno_path $WORKING/annotations/labels.json \
  --image_dir $COCODATA/train2017 \
- --num_sample 200
+ --num_sample 2000
