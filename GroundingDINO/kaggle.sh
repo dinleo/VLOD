@@ -1,9 +1,9 @@
 export CUDA_HOME=/usr/local/cuda
 pip install wandb huggingface_hub python-dotenv
 pip install -e .
-mkdir -p output/data
-mkdir -p annotations
+mkdir -p output
+mkdir -p data
 python utils_/hf_down.py --sub $SUB --filename $CKPT
 mv $SUB/weights output/weights
 #python utils_/coco_add.py
-mv $COCODATA/annotations/labels.json $WORKING/annotations/labels.json
+cp $COCODATA/annotations/labels.json $WORKING/annotations/labels.json
