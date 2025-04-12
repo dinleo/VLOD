@@ -185,14 +185,15 @@ def main(args):
         n = len(dataset)
     save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "/" + args.anno_path.split("/")[-1].split(".")[
         -2] + "_" + str(n)
-    print(save_name)
+    if cfg.dev_test:
+        save_name = "dev_test/" + save_name
 
     # build post captions
     id2name = {cat["id"]: cat["name"] for cat in dataset.coco.dataset["categories"]}
     category_dict = dataset.coco.dataset['categories']
-    cat_list_tgt = [item['name'] for item in category_dict]
-    caption_tgt = " . ".join(cat_list_tgt) + ' .'
-    print("Targets prompt:", caption_tgt)
+    cat_list_all = [item['name'] for item in category_dict]
+    cap_all = " . ".join(cat_list_all) + ' .'
+    print("All Prompt:", cap_all)
 
     tokenlizer = get_tokenlizer.get_tokenlizer(cfg.text_encoder_type)
 
@@ -213,11 +214,11 @@ def main(args):
             for target in targets:
                 cap, cat_list = create_caption_from_labels(id2name, target["labels"])
                 if cfg.tg_cat_only:
-                    captions.append(caption_tgt)
-                    cat_lists.append(cat_list_tgt)
-                else:
                     captions.append(cap)
                     cat_lists.append(cat_list)
+                else:
+                    captions.append(cap_all)
+                    cat_lists.append(cat_list_all)
             postprocessor = PostProcessCocoGrounding(
                 cat_lists=cat_lists, cats_dict=dataset.coco.cats, tokenlizer=tokenlizer)
             # feed to the model

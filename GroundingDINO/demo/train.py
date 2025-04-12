@@ -272,14 +272,15 @@ class Trainer:
         self.id2name = {cat["id"]: cat["name"] for cat in dataset.coco.dataset["categories"]}
         self.category_dict = dataset.coco.cats
         self.step = 0
-        load_dotenv()
-        WDB = os.getenv('WANDB_API_KEY')
-        wandb.login(key=WDB)
-        self.wandb = wandb.init(
-            entity=cfg.wandb_entity,
-            project=cfg.wandb_project,
-            name=cfg.wandb_name,
-        )
+        if not cfg.dev_test:
+            load_dotenv()
+            WDB = os.getenv('WANDB_API_KEY')
+            wandb.login(key=WDB)
+            self.wandb = wandb.init(
+                entity=cfg.wandb_entity,
+                project=cfg.wandb_project,
+                name=cfg.wandb_name,
+            )
 
     def create_caption_from_labels(self, labels):
         cat_names = [self.id2name[l] for l in labels]
@@ -289,8 +290,8 @@ class Trainer:
     def train(self, dataloader, max_step):
         self.model.train()
         total_loss = 0
-        print("Total Len:" , len(dataloader))
-        print("cat list", self.category_dict)
+        print("Data Len:" , len(dataloader))
+        print("Cat Len", len(self.category_dict))
 
         with tqdm(total=max_step, desc="Process") as pbar:
             for images, targets in dataloader:
@@ -316,13 +317,16 @@ class Trainer:
                 # 3. 손실 계산
                 loss_dict = criterion(results, targets)
                 loss = loss_dict["loss_total"]
+                # from torchviz import make_dot
+                # make_dot(loss, params=dict(self.model.named_parameters()), show_attrs=True, show_saved=True).render("output/loss", format="pdf")
+                # exit()
 
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
 
                 total_loss += loss.item()
-                if self.step % self.cfg.log_frq == 0:
+                if self.step % self.cfg.log_frq == 0 and not self.cfg.dev_test:
                     log_res = {key: val.item() for key, val in loss_dict.items()}
                     self.wandb.log(log_res, step=self.step)
                 if self.step != 0 and self.step % self.cfg.save_frq == 0:
@@ -346,6 +350,9 @@ def main(args):
     device = args.device
     cfg = SLConfig.fromfile(args.config_file)
     cfg.device = device
+    if cfg.dev_test:
+        print("<<<< TEST MODE >>>>")
+        cfg.batch_size = 1
 
     model = load_model(args.config_file, args.checkpoint_path)
     model = model.to(device)

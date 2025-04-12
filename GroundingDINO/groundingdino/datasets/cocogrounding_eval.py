@@ -23,7 +23,7 @@ import numpy as np
 import pycocotools.mask as mask_util
 import torch
 from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
+from .cocoeval import COCOeval
 
 from groundingdino.util.misc import all_gather
 
@@ -119,8 +119,9 @@ class CocoGroundingEvaluator(object):
             for name, ap in class_res.items():
                 print(f"{name:20}: {ap:.4f}")
             output["class_ap"] = class_res
-        output_dir = f"output/{filename}" + ".json"
+        output_dir = f"output/eval/{filename}" + ".json"
         os.makedirs(os.path.dirname(output_dir), exist_ok=True)
+        print(f"Save results at {output_dir}")
         with open(output_dir, "w") as f:
             json.dump(output, f, indent=2)
 
