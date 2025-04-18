@@ -97,9 +97,7 @@ class PostProcessCoco(torch.nn.Module):
         scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
         boxes = boxes * scale_fct[:, None, :]
 
-        if self.train_mode:
-            results = {'scores': scores, 'labels': labels, 'boxes': boxes, 'prob': topk_prob}
-        else:
-            results = [{'scores': s, 'labels': l, 'boxes': b, 'prob': p}
-                       for s, l, b, p in zip(scores, labels, boxes, topk_prob)]
+
+        results = {'scores': scores, 'labels': labels, 'boxes': boxes, 'prob': topk_prob}
+
         return results

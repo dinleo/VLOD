@@ -45,7 +45,7 @@ class CocoGroundingEvaluator(object):
         self.useCats = useCats
 
     def update(self, predictions):
-        img_ids = list(np.unique(list(predictions.keys())))
+        img_ids = np.unique(predictions["image_id"])
         self.img_ids.extend(img_ids)
 
         for iou_type in self.iou_types:
@@ -125,19 +125,18 @@ class CocoGroundingEvaluator(object):
 
     def prepare_for_coco_detection(self, predictions):
         coco_results = []
-        for original_id, prediction in predictions.items():
-            if len(prediction) == 0:
-                continue
+        for b_i in range(len(predictions["image_id"])):
 
-            boxes = prediction["boxes"]
+            image_id = predictions["image_id"][b_i]
+            boxes = predictions["boxes"][b_i]
             boxes = convert_to_xywh(boxes).tolist()
-            scores = prediction["scores"].tolist()
-            labels = prediction["labels"].tolist()
+            scores = predictions["scores"][b_i].tolist()
+            labels = predictions["labels"][b_i].tolist()
 
             coco_results.extend(
                 [
                     {
-                        "image_id": original_id,
+                        "image_id": image_id,
                         "category_id": labels[k],
                         "bbox": box,
                         "score": scores[k],

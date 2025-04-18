@@ -86,7 +86,7 @@ def main(args):
     if n == -1:
         n = len(dataset)
     save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "/" + args.anno_path.split("/")[-1].split(".")[
-        -2] + "_" + str(n)
+        -2] + "_" + str(n) + "_" + str(cfg.test_batch)
     if cfg.dev_test:
         save_name = "dev_test/" + save_name
 
@@ -129,9 +129,9 @@ def main(args):
             orig_target_sizes = torch.stack(
                 [t["orig_size"] for t in targets], dim=0).to(images.device)
             results = postprocessor(outputs, orig_target_sizes)
-            cocogrounding_res = {
-                target["image_id"]: output for target, output in zip(targets, results)}
-            evaluator.update(cocogrounding_res)
+            results["image_id"] = [target["image_id"] for target in targets]
+
+            evaluator.update(results)
 
             pbar.update(1)
 
