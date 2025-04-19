@@ -16,7 +16,7 @@ from groundingdino.util.captions import create_caption_from_labels, PostProcessC
 # from torchvision.datasets import CocoDetection
 import torchvision
 from groundingdino.datasets.cocogrounding_eval import CocoGroundingEvaluator
-
+from utils_.hf_up import upload
 
 def load_model(model_config_path: str, model_checkpoint_path: str, device: str = "cuda"):
     args = SLConfig.fromfile(model_config_path)
@@ -117,8 +117,10 @@ def main(args):
                 else:
                     captions.append(cap_all)
                     cat_lists.append(cat_list_all)
+
             postprocessor = PostProcessCoco(
                 cat_lists=cat_lists, cats2id_dict=dataset.coco.cats, tokenlizer=tokenlizer, train_mode=False)
+
             # feed to the model
             outputs = model(images, captions=captions)
 
@@ -135,10 +137,11 @@ def main(args):
     evaluator.accumulate()
     evaluator.summarize()
     save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "/" + args.anno_path.split("/")[-1].split(".")[
-        -2] + "_" + str(n) + "_" + str(cfg.test_batch)
+        -2] + "_" + str(n)
     if cfg.dev_test:
         save_name = "dev_test/" + save_name
     evaluator.save_coco_eval_json(save_name)
+    upload("all")
 
 
 if __name__ == "__main__":
