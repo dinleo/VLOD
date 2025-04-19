@@ -199,7 +199,7 @@ class Trainer:
             self.wandb = wandb.init(
                 entity=cfg.wandb_entity,
                 project=cfg.wandb_project,
-                name=cfg.wandb_name,
+                name=cfg.branch_name,
             )
 
     def train(self, dataloader, max_step):
@@ -258,7 +258,7 @@ class Trainer:
         ckpt_path = os.path.join(save_dir, f"ckpt_{step}.pth")
         torch.save({"model": self.model.state_dict()}, ckpt_path)
         print(f"Model checkpoint saved to {ckpt_path}")
-        upload(self.cfg.wandb_name)
+        upload(self.cfg.branch_name)
 
 
 def main(args):

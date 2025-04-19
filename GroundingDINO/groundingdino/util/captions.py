@@ -3,16 +3,9 @@ from groundingdino.util.vl_utils import build_captions_and_token_span, create_po
 import torch
 
 
-def find_coco_id(coco_cat: dict, name: str):
-    for _, cat_info in coco_cat.items():
-        if cat_info["name"].lower() == name.lower():
-            return cat_info["id"]
-    return 0
-
-
 def create_caption_from_labels(id2name, labels):
     cat_names = [id2name[l] for l in labels]
-    cat_list = sorted(list(set(cat_names)))  # 중복 제거 및 정렬
+    cat_list = list(set(cat_names))  # 중복 제거 및 정렬
     return " . ".join(cat_list) + " .", cat_list
 
 
@@ -23,9 +16,12 @@ class PostProcessCoco(torch.nn.Module):
         super().__init__()
         self.num_select = num_select
         self.train_mode = train_mode
+        self.cats2id_dict = cats2id_dict
+        self.noise_token_idxs_list = []
 
         assert cat_lists is not None
         new_pos_map_list = []
+        noise_token_idxs_list = []
         for cat_list in cat_lists:
             captions, cat2tokenspan = build_captions_and_token_span(cat_list, True)
             tokenspanlist = [cat2tokenspan[cat] for cat in cat_list]
@@ -37,16 +33,21 @@ class PostProcessCoco(torch.nn.Module):
             #           , 80:91}
             id_map = {}
             for i, c in enumerate(cat_list):
-                id_map[i] = find_coco_id(cats2id_dict, c)
+                id_map[i] = self.find_coco_id(c)
 
             # build a mapping from label_id to pos_map
             new_pos_map = torch.zeros((92, 256))
+            noise_token_idxs = []
             for k, v in id_map.items():
                 pos_org = positive_map[k]
-                new_pos_map[v] = pos_org
+                new_pos_map[v] += pos_org
+                if v == 0:
+                    noise_token_idxs.append(pos_org.argmax())
             new_pos_map_list.append(new_pos_map)
+            noise_token_idxs_list.append(noise_token_idxs)
 
         self.positive_maps = torch.stack(new_pos_map_list, dim=0)
+        self.noise_token_idxs_list = noise_token_idxs_list
 
     def forward(self, outputs, target_sizes, not_to_xyxy=False):
         """ Perform the computation
@@ -61,6 +62,18 @@ class PostProcessCoco(torch.nn.Module):
 
         # pos map to logit
         prob_to_token = out_logits.sigmoid()  # bs, 900, 256
+
+        # noise
+        for b, noise_token_idxs in enumerate(self.noise_token_idxs_list):
+            if len(noise_token_idxs) > 1:
+                scores = prob_to_token[b, :, noise_token_idxs]  # [900, N]
+                max_idx = scores.argmax(dim=1)  # [900]
+
+                mask = torch.zeros_like(scores)
+                mask[torch.arange(scores.size(0)), max_idx] = 1.0
+
+                prob_to_token[b, :, noise_token_idxs] *= mask
+
         pos_maps = self.positive_maps.to(prob_to_token.device)
 
         # (bs, 900, 256) @ (cls, 256).T -> (bs, 900, cls)
@@ -101,3 +114,9 @@ class PostProcessCoco(torch.nn.Module):
         results = {'scores': scores, 'labels': labels, 'boxes': boxes, 'prob': topk_prob}
 
         return results
+
+    def find_coco_id(self, cat_name: str):
+        for _, cat_info in self.cats2id_dict.items():
+            if cat_info["name"].lower() == cat_name.lower():
+                return cat_info["id"]
+        return 0

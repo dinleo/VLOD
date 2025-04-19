@@ -16,6 +16,7 @@ from groundingdino.util.captions import create_caption_from_labels, PostProcessC
 # from torchvision.datasets import CocoDetection
 import torchvision
 from groundingdino.datasets.cocogrounding_eval import CocoGroundingEvaluator
+from utils_.hf_up import upload
 
 
 def load_model(model_config_path: str, model_checkpoint_path: str, device: str = "cuda"):
@@ -65,6 +66,7 @@ def main(args):
     # config
     cfg = SLConfig.fromfile(args.config_file)
     n = args.num_sample
+    noise = args.noise
 
     # build model
     model = load_model(args.config_file, args.checkpoint_path)
@@ -79,6 +81,25 @@ def main(args):
             T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
         ]
     )
+    noise_cat = [
+        "alien",
+        "dragon",
+        "zombie",
+        "ghost",
+        "unicorn",
+        "vampire",
+        "robot",
+        "monster",
+        "wizard",
+        "dinosaur"
+    ]
+
+    add_cat_list = noise_cat[:noise]
+    add_cap = " " + " . ".join(add_cat_list) + ' .'
+    if noise == 0:
+        add_cap = ""
+        add_cat_list = []
+    print("Noise:", noise, add_cap)
     dataset = CocoDetection(
         args.image_dir, args.anno_path, transforms=transform)
     data_loader = DataLoader(
@@ -98,6 +119,7 @@ def main(args):
     # build evaluator
     evaluator = CocoGroundingEvaluator(
         dataset.coco, iou_types=("bbox",), useCats=True)
+    evaluator.coco_gt.cats[0] = {'supercategory': 'noise', 'id': 0, 'name': 'noise'}
 
     with tqdm(total=n, desc="Process") as pbar:
         # run inference
@@ -107,18 +129,17 @@ def main(args):
             # get images and captions
             images = images.tensors.to(args.device)
 
-
             captions, cat_lists = [], []
             for target in targets:
                 cap, cat_list = create_caption_from_labels(id2name, target["labels"])
-                if cfg.tg_cat_only:
-                    captions.append(cap)
-                    cat_lists.append(cat_list)
-                else:
-                    captions.append(cap_all)
-                    cat_lists.append(cat_list_all)
+                cap += add_cap
+                cat_list += add_cat_list
+                captions.append(cap)
+                cat_lists.append(cat_list)
+
             postprocessor = PostProcessCoco(
                 cat_lists=cat_lists, cats2id_dict=dataset.coco.cats, tokenlizer=tokenlizer, train_mode=False)
+
             # feed to the model
             outputs = model(images, captions=captions)
 
@@ -134,11 +155,12 @@ def main(args):
     evaluator.synchronize_between_processes()
     evaluator.accumulate()
     evaluator.summarize()
-    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "/" + args.anno_path.split("/")[-1].split(".")[
-        -2] + "_" + str(n) + "_" + str(cfg.test_batch)
+    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "_" + "noise" + "/" + args.anno_path.split("/")[-1].split(".")[
+        -2] + "_" + str(n)  + f"_[{str(noise)}]"
     if cfg.dev_test:
         save_name = "dev_test/" + save_name
     evaluator.save_coco_eval_json(save_name)
+    upload("noise")
 
 
 if __name__ == "__main__":
@@ -166,6 +188,7 @@ if __name__ == "__main__":
                         help="number of workers for dataloader")
     parser.add_argument("--num_sample", type=int, default=-1,
                         help="number of test samples")
+    parser.add_argument("--noise", type=int, default=0)
     args = parser.parse_args()
 
     main(args)
