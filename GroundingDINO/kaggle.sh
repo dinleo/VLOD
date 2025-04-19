@@ -3,7 +3,8 @@ pip install wandb huggingface_hub python-dotenv
 pip install -e .
 mkdir -p output
 mkdir -p data
+mkdir -p ckpt
 python utils_/hf_down.py --sub $SUB --filename $CKPT
-mv $SUB/weights output/weights
+mv $SUB/weights ckpt/weights
 #python utils_/coco_add.py
-cp $COCODATA/annotations/labels.json $WORKING/annotations/labels.json
+#cp $ANO_PATH ./data/annotations/labels.json

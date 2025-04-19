@@ -267,7 +267,7 @@ def main(args):
     cfg.device = device
     if cfg.dev_test:
         print("<<<< TEST MODE >>>>")
-        cfg.batch_size = 1
+        cfg.train_batch = 1
 
     model = load_model(args.config_file, args.checkpoint_path)
     model = model.to(device)
@@ -279,7 +279,7 @@ def main(args):
     ])
 
     dataset = CocoDetection(args.image_dir, args.anno_path, transforms=transform)
-    data_loader = DataLoader(dataset, batch_size=cfg.batch_size, shuffle=True,
+    data_loader = DataLoader(dataset, batch_size=cfg.train_batch, shuffle=True,
                              num_workers=4, collate_fn=collate_fn)
 
     optimizer = optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)

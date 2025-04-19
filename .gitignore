@@ -146,9 +146,9 @@ vis/
 tmp/
 
 datasets/
-GroundingDINO/output/weights/
+GroundingDINO/weights/
 test.*
-/GroundingDINO/output/weights/
+/GroundingDINO/weights/
 /GroundingDINO/data/
 /GroundingDINO/demo/images_with_bounding_boxes/
 /.idea/*
