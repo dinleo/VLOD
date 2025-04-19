@@ -119,7 +119,6 @@ def main(args):
     # build evaluator
     evaluator = CocoGroundingEvaluator(
         dataset.coco, iou_types=("bbox",), useCats=True)
-    evaluator.coco_gt.cats[0] = {'supercategory': 'noise', 'id': 0, 'name': 'noise'}
 
     with tqdm(total=n, desc="Process") as pbar:
         # run inference

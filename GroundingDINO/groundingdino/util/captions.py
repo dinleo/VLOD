@@ -17,12 +17,12 @@ class PostProcessCoco(torch.nn.Module):
         self.num_select = num_select
         self.train_mode = train_mode
         self.cats2id_dict = cats2id_dict
-        self.noise_token_idxs_list = []
+        self.coco_ids = sorted([v['id'] for v in cats2id_dict.values() if v['id'] > 0])
 
         assert cat_lists is not None
         new_pos_map_list = []
-        noise_token_idxs_list = []
         for cat_list in cat_lists:
+            coco_ids = self.coco_ids.copy()
             captions, cat2tokenspan = build_captions_and_token_span(cat_list, True)
             tokenspanlist = [cat2tokenspan[cat] for cat in cat_list]
             positive_map = create_positive_map_from_span(
@@ -34,20 +34,25 @@ class PostProcessCoco(torch.nn.Module):
             id_map = {}
             for i, c in enumerate(cat_list):
                 id_map[i] = self.find_coco_id(c)
+                if id_map[i] != 0:
+                    coco_ids.remove(id_map[i])
+
+            # noise token
+            for i, c in enumerate(cat_list):
+                if id_map[i] == 0:
+                    if not coco_ids:
+                        raise ValueError(f"No more COCO id to replace with {c}")
+                    id_map[i] = coco_ids.pop(0)
+
 
             # build a mapping from label_id to pos_map
             new_pos_map = torch.zeros((92, 256))
-            noise_token_idxs = []
             for k, v in id_map.items():
                 pos_org = positive_map[k]
-                new_pos_map[v] += pos_org
-                if v == 0:
-                    noise_token_idxs.append(pos_org.argmax())
+                new_pos_map[v] = pos_org
             new_pos_map_list.append(new_pos_map)
-            noise_token_idxs_list.append(noise_token_idxs)
 
         self.positive_maps = torch.stack(new_pos_map_list, dim=0)
-        self.noise_token_idxs_list = noise_token_idxs_list
 
     def forward(self, outputs, target_sizes, not_to_xyxy=False):
         """ Perform the computation
@@ -62,17 +67,6 @@ class PostProcessCoco(torch.nn.Module):
 
         # pos map to logit
         prob_to_token = out_logits.sigmoid()  # bs, 900, 256
-
-        # noise
-        for b, noise_token_idxs in enumerate(self.noise_token_idxs_list):
-            if len(noise_token_idxs) > 1:
-                scores = prob_to_token[b, :, noise_token_idxs]  # [900, N]
-                max_idx = scores.argmax(dim=1)  # [900]
-
-                mask = torch.zeros_like(scores)
-                mask[torch.arange(scores.size(0)), max_idx] = 1.0
-
-                prob_to_token[b, :, noise_token_idxs] *= mask
 
         pos_maps = self.positive_maps.to(prob_to_token.device)
 
