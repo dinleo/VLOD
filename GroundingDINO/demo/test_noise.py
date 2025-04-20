@@ -148,11 +148,12 @@ def main(args):
                 # if noise == 0:
                 #     noise_cap = ""
                 #     noise_cat_list = []
-                # cap += noise_cap
-                # cat_list += noise_cat_list
-                #
-                # captions.append(cap)
-                # cat_lists.append(cat_list)
+
+                cap += noise_cap
+                cat_list += noise_cat_list
+
+                captions.append(cap)
+                cat_lists.append(cat_list)
 
             postprocessor = PostProcessCoco(
                 cat_lists=cat_lists, cats2id_dict=dataset.coco.cats, tokenlizer=tokenlizer, train_mode=False)
