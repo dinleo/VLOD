@@ -2,7 +2,7 @@
 export TOKENIZERS_PARALLELISM=false
 export CUDA_VISIBLE_DEVICES=0
 
-for noise in {0..10}
+for noise in {10..10}
 do
   python demo/test_noise.py \
    -c cfg.py \
