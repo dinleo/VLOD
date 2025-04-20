@@ -136,12 +136,12 @@ def main(args):
     evaluator.synchronize_between_processes()
     evaluator.accumulate()
     evaluator.summarize()
-    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "/" + args.anno_path.split("/")[-1].split(".")[
+    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "_" + args.title + "/" + args.anno_path.split("/")[-1].split(".")[
         -2] + "_" + str(n)
     if cfg.dev_test:
         save_name = "dev_test/" + save_name
     evaluator.save_coco_eval_json(save_name)
-    upload("all")
+    upload(args.up_dir)
 
 
 if __name__ == "__main__":
@@ -169,6 +169,8 @@ if __name__ == "__main__":
                         help="number of workers for dataloader")
     parser.add_argument("--num_sample", type=int, default=-1,
                         help="number of test samples")
+    parser.add_argument("--up_dir", type=str, default="")
+    parser.add_argument("--title", type=str, default="")
     args = parser.parse_args()
 
     main(args)

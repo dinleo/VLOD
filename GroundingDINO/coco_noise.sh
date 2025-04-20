@@ -11,5 +11,6 @@ do
    --image_dir "$IMG_PATH" \
    --num_sample 1000 \
    --noise "$noise" \
-   --save_name "$SAVE_NAME"
+   --up_dir "$UP_DIR" \
+   --title "real"
 done

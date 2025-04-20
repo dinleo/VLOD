@@ -10,7 +10,7 @@ api = HfApi()
 
 # 인자 파서 설정
 parser = argparse.ArgumentParser(description="Download a specific file from Hugging Face Hub")
-parser.add_argument('--sub', type=str, default="origin", help='Subfolder path under the repo')
+parser.add_argument('--dw_dir', type=str, default="origin", help='Subfolder path under the repo')
 parser.add_argument('--filename', type=str, default="org_b", help='Name of the file to download')
 
 args = parser.parse_args()
@@ -19,7 +19,7 @@ args = parser.parse_args()
 downloaded_path = api.hf_hub_download(
     local_dir='./',
     repo_id="dinleo11/VLOD",
-    subfolder=f"{args.sub}/weights",
+    subfolder=f"{args.dw_dir}/weights",
     filename=f"{args.filename}.pth",
     repo_type="model",
     token=HUG,

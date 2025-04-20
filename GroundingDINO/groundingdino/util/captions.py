@@ -17,12 +17,11 @@ class PostProcessCoco(torch.nn.Module):
         self.num_select = num_select
         self.train_mode = train_mode
         self.cats2id_dict = cats2id_dict
-        self.coco_ids = sorted([v['id'] for v in cats2id_dict.values() if v['id'] > 0])
+        self.num_classes = max([v['id'] for v in cats2id_dict.values()]) + 2
 
         assert cat_lists is not None
         new_pos_map_list = []
         for cat_list in cat_lists:
-            coco_ids = self.coco_ids.copy()
             captions, cat2tokenspan = build_captions_and_token_span(cat_list, True)
             tokenspanlist = [cat2tokenspan[cat] for cat in cat_list]
             positive_map = create_positive_map_from_span(
@@ -34,19 +33,9 @@ class PostProcessCoco(torch.nn.Module):
             id_map = {}
             for i, c in enumerate(cat_list):
                 id_map[i] = self.find_coco_id(c)
-                if id_map[i] != 0:
-                    coco_ids.remove(id_map[i])
-
-            # noise token
-            for i, c in enumerate(cat_list):
-                if id_map[i] == 0:
-                    if not coco_ids:
-                        raise ValueError(f"No more COCO id to replace with {c}")
-                    id_map[i] = coco_ids.pop(0)
-
 
             # build a mapping from label_id to pos_map
-            new_pos_map = torch.zeros((92, 256))
+            new_pos_map = torch.zeros((self.num_classes, 256))
             for k, v in id_map.items():
                 pos_org = positive_map[k]
                 new_pos_map[v] = pos_org
@@ -97,7 +86,7 @@ class PostProcessCoco(torch.nn.Module):
         boxes = torch.gather(
             boxes, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
         topk_prob = torch.gather(
-            prob, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 92))
+            prob, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, self.num_classes))
 
         # and from relative [0, 1] to absolute [0, height] coordinates
         img_h, img_w = target_sizes.unbind(1)

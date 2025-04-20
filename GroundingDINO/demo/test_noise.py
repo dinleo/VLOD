@@ -102,6 +102,17 @@ def main(args):
     print("Noise:", noise, noise_cap)
     dataset = CocoDetection(
         args.image_dir, args.anno_path, transforms=transform)
+    noise_cat_base_id = 90
+    for i, name in enumerate(noise_cat):
+        new_id = noise_cat_base_id + i
+        new_cat = {
+            "supercategory": "noise",
+            "id": new_id,
+            "name": name
+        }
+        dataset.coco.dataset["categories"].append(new_cat)
+        dataset.coco.cats[new_id] = new_cat
+
     data_loader = DataLoader(
         dataset, batch_size=cfg.test_batch, shuffle=False, num_workers=args.num_workers, collate_fn=collate_fn)
     if n == -1:
@@ -132,9 +143,11 @@ def main(args):
             for target in targets:
                 cap, cat_list = create_caption_from_labels(id2name, target["labels"])
 
-                noise_cat_list = [name for name in cat_list_all if name not in cat_list][:noise]
-                noise_cap = " " + " . ".join(noise_cat_list) + ' .'
-
+                # noise_cat_list = [name for name in cat_list_all if name not in cat_list][:noise]
+                # noise_cap = " " + " . ".join(noise_cat_list) + ' .'
+                # if noise == 0:
+                #     noise_cap = ""
+                #     noise_cat_list = []
                 cap += noise_cap
                 cat_list += noise_cat_list
 
@@ -159,12 +172,12 @@ def main(args):
     evaluator.synchronize_between_processes()
     evaluator.accumulate()
     evaluator.summarize()
-    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "_" + "noise" + "/" + args.anno_path.split("/")[-1].split(".")[
+    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "_" + args.title + "/" + args.anno_path.split("/")[-1].split(".")[
         -2] + "_" + str(n)  + f"_[{str(noise)}]"
     if cfg.dev_test:
         save_name = "dev_test/" + save_name
     evaluator.save_coco_eval_json(save_name)
-    upload(args.save_name)
+    upload(args.up_dir)
 
 
 if __name__ == "__main__":
@@ -193,7 +206,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_sample", type=int, default=-1,
                         help="number of test samples")
     parser.add_argument("--noise", type=int, default=0)
-    parser.add_argument("--save_name", type=str, default="")
+    parser.add_argument("--up_dir", type=str, default="")
+    parser.add_argument("--title", type=str, default="")
     args = parser.parse_args()
 
     main(args)

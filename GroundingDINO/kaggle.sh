@@ -4,7 +4,7 @@ pip install -e .
 mkdir -p output
 mkdir -p data
 mkdir -p ckpt
-python utils_/hf_down.py --sub $SUB --filename $CKPT
-mv $SUB/weights ckpt/weights
+python utils_/hf_down.py --dw_dir $DW_DIR --filename $CKPT
+mv $DW_DIR/weights ckpt/weights
 #python utils_/coco_add.py
 #cp $ANO_PATH ./data/annotations/labels.json

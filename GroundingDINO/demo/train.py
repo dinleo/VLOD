@@ -199,7 +199,7 @@ class Trainer:
             self.wandb = wandb.init(
                 entity=cfg.wandb_entity,
                 project=cfg.wandb_project,
-                name=args.save_name,
+                name=cfg.title,
             )
 
     def train(self, dataloader, max_step):
@@ -258,14 +258,15 @@ class Trainer:
         ckpt_path = os.path.join(save_dir, f"ckpt_{step}.pth")
         torch.save({"model": self.model.state_dict()}, ckpt_path)
         print(f"Model checkpoint saved to {ckpt_path}")
-        upload(self.cfg.branch_name)
+        upload(self.cfg.up_dir)
 
 
 def main(args):
     device = args.device
     cfg = SLConfig.fromfile(args.config_file)
     cfg.device = device
-    cfg.save_name = args.save_name
+    cfg.up_dir = args.up_dir
+    cfg.title = args.title
     if cfg.dev_test:
         print("<<<< TEST MODE >>>>")
         cfg.train_batch = 1
@@ -298,7 +299,8 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_path", "-p", type=str, default=None)
     parser.add_argument("--anno_path", type=str, required=True)
     parser.add_argument("--image_dir", type=str, required=True)
-    parser.add_argument("--save_name", type=str, default="")
+    parser.add_argument("--up_dir", type=str, default="")
+    parser.add_argument("--title", type=str, default="")
 
     args = parser.parse_args()
     main(args)
