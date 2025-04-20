@@ -154,7 +154,7 @@ def main(args):
     evaluator.synchronize_between_processes()
     evaluator.accumulate()
     evaluator.summarize()
-    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "_" + "noise" + "/" + args.anno_path.split("/")[-1].split(".")[
+    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "_" + "noise2" + "/" + args.anno_path.split("/")[-1].split(".")[
         -2] + "_" + str(n)  + f"_[{str(noise)}]"
     if cfg.dev_test:
         save_name = "dev_test/" + save_name
