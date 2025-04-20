@@ -12,5 +12,5 @@ do
    --num_sample 1000 \
    --noise "$noise" \
    --up_dir "$UP_DIR" \
-   --title "coco"
+   --title "real"
 done
