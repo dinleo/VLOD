@@ -145,18 +145,18 @@ def main(args):
             for target in targets:
                 cap, cat_list = create_caption_from_labels(id2name, target["labels"])
 
-                if True:
-                    # coco noise activate
-                    coco_pool = [name for name in cat_list_all_coco if name not in cat_list]
-
-                    if len(coco_pool) <= noise:
-                        noise_coco_cat_list = coco_pool
-                    else:
-                        noise_coco_cat_list = coco_pool[:noise]
-
-                    noise_coco_cap = " " + " . ".join(noise_coco_cat_list) + ' .'
-                    noise_cap = noise_coco_cap
-                    noise_cat_list = noise_coco_cat_list
+                # if True:
+                #     # coco noise activate
+                #     coco_pool = [name for name in cat_list_all_coco if name not in cat_list]
+                #
+                #     if len(coco_pool) <= noise:
+                #         noise_coco_cat_list = coco_pool
+                #     else:
+                #         noise_coco_cat_list = coco_pool[:noise]
+                #
+                #     noise_coco_cap = " " + " . ".join(noise_coco_cat_list) + ' .'
+                #     noise_cap = noise_coco_cap
+                #     noise_cat_list = noise_coco_cat_list
 
                 if noise == 0:
                     noise_cap = ""
