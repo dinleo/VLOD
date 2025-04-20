@@ -143,11 +143,11 @@ def main(args):
             for target in targets:
                 cap, cat_list = create_caption_from_labels(id2name, target["labels"])
 
-                # noise_cat_list = [name for name in cat_list_all if name not in cat_list][:noise]
-                # noise_cap = " " + " . ".join(noise_cat_list) + ' .'
-                # if noise == 0:
-                #     noise_cap = ""
-                #     noise_cat_list = []
+                noise_cat_list = [name for name in cat_list_all if name not in cat_list][:noise]
+                noise_cap = " " + " . ".join(noise_cat_list) + ' .'
+                if noise == 0:
+                    noise_cap = ""
+                    noise_cat_list = []
                 cap += noise_cap
                 cat_list += noise_cat_list
 
