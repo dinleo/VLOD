@@ -96,12 +96,10 @@ def main(args):
 
     noise_cat_list = noise_cat[:noise]
     noise_cap = " " + " . ".join(noise_cat_list) + ' .'
-    if noise == 0:
-        noise_cap = ""
-        noise_cat_list = []
     print("Noise:", noise, noise_cap)
     dataset = CocoDetection(
         args.image_dir, args.anno_path, transforms=transform)
+    cat_list_all_coco = [item['name'] for item in dataset.coco.dataset['categories']]
     noise_cat_base_id = 91
     for i, name in enumerate(noise_cat):
         new_id = noise_cat_base_id + i
@@ -142,9 +140,20 @@ def main(args):
             captions, cat_lists = [], []
             for target in targets:
                 cap, cat_list = create_caption_from_labels(id2name, target["labels"])
+                print(len(cat_list), cat_list)
+                # coco noise activate
+                if True:
+                    coco_pool = [name for name in cat_list_all_coco if name not in cat_list]
 
-                noise_cat_list = [name for name in cat_list_all if name not in cat_list][:noise]
-                noise_cap = " " + " . ".join(noise_cat_list) + ' .'
+                    if len(coco_pool) <= noise:
+                        noise_coco_cat_list = coco_pool
+                    else:
+                        noise_coco_cat_list = coco_pool[:noise]
+
+                    noise_coco_cap = " " + " . ".join(noise_coco_cat_list) + ' .'
+                    noise_cap = noise_coco_cap
+                    noise_cat_list = noise_coco_cat_list
+
                 if noise == 0:
                     noise_cap = ""
                     noise_cat_list = []

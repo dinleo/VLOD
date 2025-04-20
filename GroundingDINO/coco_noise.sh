@@ -2,7 +2,7 @@
 export TOKENIZERS_PARALLELISM=false
 export CUDA_VISIBLE_DEVICES=0
 
-for noise in {0..10}
+for noise in $(seq 0 10 70)
 do
   python demo/test_noise.py \
    -c cfg.py \
@@ -12,5 +12,5 @@ do
    --num_sample 1000 \
    --noise "$noise" \
    --up_dir "$UP_DIR" \
-   --title "coco"
+   --title "coco10"
 done

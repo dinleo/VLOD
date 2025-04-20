@@ -153,3 +153,5 @@ test.*
 /GroundingDINO/demo/images_with_bounding_boxes/
 /.idea/*
 /GroundingDINO/wandb/
+/ZiRaGroundingDINO/
+/GroundingDINO/temp/*
