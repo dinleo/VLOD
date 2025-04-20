@@ -7,10 +7,11 @@ HUG = os.getenv('HUG')
 api = HfApi()
 
 def upload(sub):
-    api.upload_folder(
-        folder_path='./output', # 폴더 안 내용물만 들어간다.
-        repo_id="dinleo11/VLOD", # 레포 주소
-        path_in_repo=sub, # 레포 내 저장할 폴더
-        repo_type="model",
-        token=HUG
-    )
+    if sub != "":
+        api.upload_folder(
+            folder_path='./output', # 폴더 안 내용물만 들어간다.
+            repo_id="dinleo11/VLOD", # 레포 주소
+            path_in_repo=sub, # 레포 내 저장할 폴더
+            repo_type="model",
+            token=HUG
+        )

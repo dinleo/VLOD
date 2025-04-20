@@ -94,12 +94,12 @@ def main(args):
         "dinosaur"
     ]
 
-    add_cat_list = noise_cat[:noise]
-    add_cap = " " + " . ".join(add_cat_list) + ' .'
+    noise_cat_list = noise_cat[:noise]
+    noise_cap = " " + " . ".join(noise_cat_list) + ' .'
     if noise == 0:
-        add_cap = ""
-        add_cat_list = []
-    print("Noise:", noise, add_cap)
+        noise_cap = ""
+        noise_cat_list = []
+    print("Noise:", noise, noise_cap)
     dataset = CocoDetection(
         args.image_dir, args.anno_path, transforms=transform)
     data_loader = DataLoader(
@@ -131,8 +131,13 @@ def main(args):
             captions, cat_lists = [], []
             for target in targets:
                 cap, cat_list = create_caption_from_labels(id2name, target["labels"])
-                cap += add_cap
-                cat_list += add_cat_list
+
+                noise_cat_list = [name for name in cat_list_all if name not in cat_list][:noise]
+                noise_cap = " " + " . ".join(noise_cat_list) + ' .'
+
+                cap += noise_cap
+                cat_list += noise_cat_list
+
                 captions.append(cap)
                 cat_lists.append(cat_list)
 
@@ -154,12 +159,12 @@ def main(args):
     evaluator.synchronize_between_processes()
     evaluator.accumulate()
     evaluator.summarize()
-    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "_" + "noise2" + "/" + args.anno_path.split("/")[-1].split(".")[
+    save_name = args.checkpoint_path.split("/")[-1].split(".")[-2] + "_" + "noise" + "/" + args.anno_path.split("/")[-1].split(".")[
         -2] + "_" + str(n)  + f"_[{str(noise)}]"
     if cfg.dev_test:
         save_name = "dev_test/" + save_name
     evaluator.save_coco_eval_json(save_name)
-    upload("noise")
+    upload(args.save_name)
 
 
 if __name__ == "__main__":
@@ -188,6 +193,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_sample", type=int, default=-1,
                         help="number of test samples")
     parser.add_argument("--noise", type=int, default=0)
+    parser.add_argument("--save_name", type=str, default="")
     args = parser.parse_args()
 
     main(args)

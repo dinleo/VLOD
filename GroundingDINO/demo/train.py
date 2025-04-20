@@ -199,7 +199,7 @@ class Trainer:
             self.wandb = wandb.init(
                 entity=cfg.wandb_entity,
                 project=cfg.wandb_project,
-                name=cfg.branch_name,
+                name=args.save_name,
             )
 
     def train(self, dataloader, max_step):
@@ -265,6 +265,7 @@ def main(args):
     device = args.device
     cfg = SLConfig.fromfile(args.config_file)
     cfg.device = device
+    cfg.save_name = args.save_name
     if cfg.dev_test:
         print("<<<< TEST MODE >>>>")
         cfg.train_batch = 1
@@ -297,6 +298,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_path", "-p", type=str, default=None)
     parser.add_argument("--anno_path", type=str, required=True)
     parser.add_argument("--image_dir", type=str, required=True)
+    parser.add_argument("--save_name", type=str, default="")
 
     args = parser.parse_args()
     main(args)
