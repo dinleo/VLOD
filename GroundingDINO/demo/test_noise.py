@@ -82,16 +82,20 @@ def main(args):
         ]
     )
     noise_cat = [
-        "alien",
-        "dragon",
-        "zombie",
-        "ghost",
-        "unicorn",
-        "vampire",
-        "robot",
-        "monster",
-        "wizard",
-        "dinosaur"
+        "alien", "dragon", "zombie", "ghost", "unicorn",
+        "vampire", "robot", "monster", "wizard", "dinosaur",
+        "werewolf", "goblin", "fairy", "phoenix", "skeleton",
+        "mutant", "mermaid", "cyclops", "griffin", "banshee",
+        "genie", "orc", "demon", "beast", "chimera",
+        "golem", "kraken", "leviathan", "minotaur", "mummy",
+        "reaper", "troll", "yeti", "elf", "sprite",
+        "nymph", "succubus", "pegasus", "hydra", "gremlin",
+        "centaur", "djinn", "poltergeist", "nephilim", "lurker",
+        "shade", "seraph", "sorcerer", "lich", "wraith",
+        "drake", "fiend", "shadebeast", "harpy", "bogeyman",
+        "dryad", "phantom", "abomination", "hellhound", "levitator",
+        "wyvern", "hellspawn", "imp", "naga", "phantasm",
+        "warlock", "behemoth", "specter", "voidling", "nightmare"
     ]
 
     noise_cat_list = noise_cat[:noise]
@@ -140,9 +144,9 @@ def main(args):
             captions, cat_lists = [], []
             for target in targets:
                 cap, cat_list = create_caption_from_labels(id2name, target["labels"])
-                print(len(cat_list), cat_list)
-                # coco noise activate
+
                 if True:
+                    # coco noise activate
                     coco_pool = [name for name in cat_list_all_coco if name not in cat_list]
 
                     if len(coco_pool) <= noise:
