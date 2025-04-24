@@ -12,11 +12,9 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-GroundingDINO/build/
 develop-eggs/
 dist/
 downloads/
-eggs/
 .eggs/
 lib/
 lib64/
@@ -145,13 +143,14 @@ grounding/version.py
 vis/
 tmp/
 
-datasets/
-GroundingDINO/ckpt/weights/
 test.*
-/GroundingDINO/ckpt/weights/
-/GroundingDINO/data/
-/GroundingDINO/demo/images_with_bounding_boxes/
-/.idea/*
-/GroundingDINO/wandb/
-/ZiRaGroundingDINO/
-/GroundingDINO/temp/*
+**/ckpt
+**/data
+**/.idea
+**/wandb
+**/temp
+**/build
+**/csrc
+**/eggs
+/ZIRA/
+/AQUA/datasets/
