@@ -44,6 +44,7 @@ from groundingdino.util import ema
 from groundingdino.models import build_model
 from groundingdino.util.slconfig import SLConfig
 from groundingdino.util.utils import clean_state_dict
+from groundingdino.util.captions import PostProcessCoco
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
 
@@ -85,6 +86,8 @@ class Trainer(SimpleTrainer):
         # batch_size_scale
         self.batch_size_scale = batch_size_scale
 
+        # coco
+        self.post_coco = PostProcessCoco(self.model.tokenizer)
 
     def run_step(self):
         """
@@ -98,14 +101,16 @@ class Trainer(SimpleTrainer):
         """
         If you want to do something with the data, you can wrap the dataloader.
         """
-        data = next(self._data_loader_iter)
+        inputs = next(self._data_loader_iter)
         data_time = time.perf_counter() - start
 
         """
         If you want to do something with the losses, you can wrap the model.
         """
         with autocast(enabled=self.amp):
-            loss_dict = self.model(data)
+            outputs = self.model(inputs)
+            outputs = self.post_coco(inputs, outputs)
+            loss_dict = None
             if isinstance(loss_dict, torch.Tensor):
                 losses = loss_dict
                 loss_dict = {"total_loss": loss_dict}
