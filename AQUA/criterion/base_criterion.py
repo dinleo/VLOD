@@ -32,7 +32,17 @@ class BaseCriterion(nn.Module):
 
     def __init__(
         self,
-        matcher,
+        # Matcher
+        matcher: nn.Module = HungarianMatcher(
+        cost_class=FocalLossCost(
+            alpha=0.25,
+            gamma=2.0,
+            weight=2.0,
+        ),
+        cost_bbox=L1Cost(weight=5.0),
+        cost_giou=GIoUCost(weight=2.0),
+        ),
+        # Loss
         loss_class: nn.Module = FocalLoss(
             alpha=0.25,
             gamma=2.0,
@@ -160,14 +170,4 @@ class BaseCriterion(nn.Module):
 
 @MODULE_BUILD_FUNCS.registe_with_name(module_name="base_criterion")
 def build_criterion(args):
-    hm = HungarianMatcher(
-        cost_class=FocalLossCost(
-            alpha=0.25,
-            gamma=2.0,
-            weight=2.0,
-        ),
-        cost_bbox=L1Cost(weight=5.0),
-        cost_giou=GIoUCost(weight=2.0),
-    )
-
-    return BaseCriterion(matcher=hm)
+    return BaseCriterion()
