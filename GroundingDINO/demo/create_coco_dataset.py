@@ -1,8 +1,7 @@
 import typer
-from groundingdino.util.inference import load_model, load_image, predict
+from models.groundingdino.util import load_model, load_image, predict
 from tqdm import tqdm
 import torchvision
-import torch
 import fiftyone as fo
 
 

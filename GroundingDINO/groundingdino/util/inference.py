@@ -8,11 +8,11 @@ from PIL import Image
 from torchvision.ops import box_convert
 import bisect
 
-import groundingdino.datasets.transforms as T
-from groundingdino.models import build_model
-from groundingdino.util.misc import clean_state_dict
-from groundingdino.util.slconfig import SLConfig
-from groundingdino.util.utils import get_phrases_from_posmap
+from models import groundingdino as T
+from models.groundingdino import get_model
+from models.groundingdino.util.misc import clean_state_dict
+from models.groundingdino.util.slconfig import SLConfig
+from models.groundingdino.util import get_phrases_from_posmap
 
 # ----------------------------------------------------------------------------------------------------------------------
 # OLD API
@@ -29,7 +29,7 @@ def preprocess_caption(caption: str) -> str:
 def load_model(model_config_path: str, model_checkpoint_path: str, device: str = "cuda"):
     args = SLConfig.fromfile(model_config_path)
     args.device = device
-    model = build_model(args)
+    model = get_model(args)
     checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
     model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
     model.eval()

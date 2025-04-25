@@ -2,7 +2,6 @@ import argparse
 import os
 import torch
 torch.set_printoptions(sci_mode=False, precision=4)
-import torch.nn as nn
 import torch.optim as optim
 from dotenv import load_dotenv
 from torch.utils.data import DataLoader
@@ -12,11 +11,11 @@ import torch.nn.functional as F
 import wandb
 from utils_.hf_up import upload
 
-from groundingdino.util.slconfig import SLConfig
-from groundingdino.util.misc import collate_fn
-import groundingdino.datasets.transforms as T
-from groundingdino.util import get_tokenlizer, box_ops
-from groundingdino.util.captions import create_caption_from_labels, PostProcessCoco
+from models.groundingdino.util.slconfig import SLConfig
+from models.groundingdino.util.misc import collate_fn
+from models import groundingdino as T
+from models.groundingdino.util import get_tokenlizer, box_ops
+from models.groundingdino.util import create_caption_from_labels, PostProcessCoco
 
 from test_ap_on_coco import CocoDetection, load_model
 

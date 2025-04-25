@@ -153,4 +153,4 @@ test.*
 **/csrc
 **/eggs
 /ZIRA/
-/AQUA/datasets/
+/AQUA/data/

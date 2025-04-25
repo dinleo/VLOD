@@ -222,7 +222,7 @@ See the `demo/inference_on_a_image.py` for more details.
 **Running with Python:**
 
 ```python
-from groundingdino.util.inference import load_model, load_image, predict, annotate
+from models.groundingdino.util import load_model, load_image, predict, annotate
 import cv2
 
 model = load_model("groundingdino/config/GroundingDINO_SwinT_OGC.py", "weights/groundingdino_swint_ogc.pth")

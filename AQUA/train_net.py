@@ -38,14 +38,15 @@ from detectron2.utils.events import (
 )
 from detectron2.checkpoint import DetectionCheckpointer
 
-from groundingdino.util.events import WandbWriter
-from groundingdino.util import ema
+from models.groundingdino import get_model
 
-from groundingdino.models import build_model
-from groundingdino.util.slconfig import SLConfig
-from groundingdino.util.utils import clean_state_dict
-from groundingdino.util.captions import PostProcessCoco
+from models.groundingdino.util import ema
+from models.groundingdino.util.events import WandbWriter
+from models.groundingdino.util.utils import clean_state_dict
+from models.groundingdino.util.captions import PostProcessCoco
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+
+from criterion import get_criterion
 
 
 class Trainer(SimpleTrainer):
@@ -56,6 +57,7 @@ class Trainer(SimpleTrainer):
     def __init__(
         self,
         model,
+        criterion,
         dataloader,
         optimizer,
         amp=False,
@@ -86,6 +88,9 @@ class Trainer(SimpleTrainer):
         # batch_size_scale
         self.batch_size_scale = batch_size_scale
 
+        # criterion
+        self.criterion = criterion
+
         # coco
         self.post_coco = PostProcessCoco(self.model.tokenizer)
 
@@ -110,7 +115,8 @@ class Trainer(SimpleTrainer):
         with autocast(enabled=self.amp):
             outputs = self.model(inputs)
             outputs = self.post_coco(inputs, outputs)
-            loss_dict = None
+            targets = outputs["targets"]
+            loss_dict = self.criterion(outputs, targets)
             if isinstance(loss_dict, torch.Tensor):
                 losses = loss_dict
                 loss_dict = {"total_loss": loss_dict}
@@ -165,11 +171,17 @@ class Trainer(SimpleTrainer):
 
 def load_model(model_config, model_checkpoint_path):
     model_config.device = "cuda"
-    model = build_model(model_config)
+    model = get_model(model_config)
     checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
     load_res = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
     # _ = model.eval()
     return model
+
+def load_criterion(model_config):
+    model_config.device = "cuda"
+    criterion = get_criterion(model_config)
+
+    return criterion
 
 
 def do_test(cfg, model, eval_only=False):
@@ -231,10 +243,13 @@ def do_train(cfg):
     checkpoint_path = model_cfg.ckpt  # change the path of the model
     model = load_model(model_cfg, checkpoint_path)
     # model.set_tsk_id(args.tsk_id)
-    logger = logging.getLogger("detectron2")
+    # logger = logging.getLogger("detectron2")
     # logger.info("Model:\n{}".format(model))
     model.to(cfg.train.device)
     # model.add_cls_prompt(cfg.dataloader.train.mapper.categories_names)
+
+    criterion = load_criterion(model_cfg)
+    criterion.to(cfg.train.device)
 
     # instantiate optimizer
     cfg.optimizer.params.model = model
@@ -251,6 +266,7 @@ def do_train(cfg):
 
     trainer = Trainer(
         model=model,
+        criterion=criterion,
         dataloader=train_loader,
         optimizer=optim,
         amp=cfg.train.amp.enabled,

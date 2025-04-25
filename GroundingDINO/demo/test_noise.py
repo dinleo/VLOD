@@ -2,27 +2,27 @@ import argparse
 from tqdm import tqdm
 
 import torch
-import torch.nn as nn
+
 torch.set_printoptions(sci_mode=False, precision=4)
 from torch.utils.data import DataLoader
 
-from groundingdino.models import build_model
-import groundingdino.datasets.transforms as T
-from groundingdino.util import box_ops, get_tokenlizer
-from groundingdino.util.misc import clean_state_dict, collate_fn
-from groundingdino.util.slconfig import SLConfig
-from groundingdino.util.captions import create_caption_from_labels, PostProcessCoco
+from models.groundingdino import get_model
+from models import groundingdino as T
+from models.groundingdino.util import get_tokenlizer
+from models.groundingdino.util.misc import clean_state_dict, collate_fn
+from models.groundingdino.util.slconfig import SLConfig
+from models.groundingdino.util import create_caption_from_labels, PostProcessCoco
 
 # from torchvision.datasets import CocoDetection
 import torchvision
-from groundingdino.datasets.cocogrounding_eval import CocoGroundingEvaluator
+from models.groundingdino import CocoGroundingEvaluator
 from utils_.hf_up import upload
 
 
 def load_model(model_config_path: str, model_checkpoint_path: str, device: str = "cuda"):
     args = SLConfig.fromfile(model_config_path)
     args.device = device
-    model = build_model(args)
+    model = get_model(args)
     checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
     model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
     model.eval()

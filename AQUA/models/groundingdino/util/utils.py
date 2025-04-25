@@ -7,9 +7,8 @@ from typing import Any, Dict, List
 
 import numpy as np
 import torch
-from transformers import AutoTokenizer
 
-from models.groundingdino.util.slconfig import SLConfig
+from ..util.slconfig import SLConfig
 
 
 def slprint(x, name="x"):
@@ -596,15 +595,30 @@ def targets_to(targets: List[Dict[str, Any]], device):
     ]
 
 
-def get_phrases_from_posmap(
-    posmap: torch.BoolTensor, tokenized: Dict, tokenizer: AutoTokenizer, left_idx: int = 0, right_idx: int = 255
-):
+def get_phrases_from_posmap(posmap: torch.BoolTensor, tokenlized, caption: str):
     assert isinstance(posmap, torch.Tensor), "posmap must be torch.Tensor"
     if posmap.dim() == 1:
-        posmap[0: left_idx + 1] = False
-        posmap[right_idx:] = False
         non_zero_idx = posmap.nonzero(as_tuple=True)[0].tolist()
-        token_ids = [tokenized["input_ids"][i] for i in non_zero_idx]
-        return tokenizer.decode(token_ids)
+        words_list = caption.split(".")
+        print("words_list:", words_list)
+
+        # build word idx list
+        words_idx_used_list = []
+        for idx in non_zero_idx:
+            word_idx = tokenlized.token_to_word(idx)
+            if word_idx is not None:
+                words_idx_used_list.append(word_idx)
+        words_idx_used_list = set(words_idx_used_list)
+
+        # build phrase
+        words_used_list = []
+        for idx, word in enumerate(words_list):
+            if idx in words_idx_used_list:
+                words_used_list.append(word)
+
+        sentence_res = " ".join(words_used_list)
+        
+        print("words_used_list:", words_used_list)
+        return sentence_res
     else:
         raise NotImplementedError("posmap must be 1-dim")

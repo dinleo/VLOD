@@ -21,8 +21,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from models.groundingdino.util import get_tokenlizer
-from models.groundingdino.util.misc import (
+from ..util import get_tokenlizer
+from ..util.box_ops import box_xyxy_to_cxcywh
+from ..util.misc import (
     NestedTensor,
     inverse_sigmoid,
     nested_tensor_from_tensor_list,
@@ -37,6 +38,7 @@ from .bertwarper import (
 from .transformer import build_transformer
 from .utils import MLP, ContrastiveEmbed
 
+from detectron2.structures import ImageList
 
 class GroundingDINO(nn.Module):
     """This is the Cross-Attention Detector module that performs object detection"""
@@ -64,6 +66,10 @@ class GroundingDINO(nn.Module):
         text_encoder_type="bert-base-uncased",
         sub_sentence_present=True,
         max_text_len=256,
+        criterion=None,
+        pixel_mean: List[float] = [123.675, 116.280, 103.530],
+        pixel_std: List[float] = [123.675, 116.280, 103.530],
+        device="cuda"
     ):
         """Initializes the model.
         Parameters:
@@ -190,6 +196,11 @@ class GroundingDINO(nn.Module):
 
         self._reset_parameters()
 
+        #
+        self.pixel_mean = pixel_mean
+        self.pixel_std = pixel_std
+        self.device = device
+
     def _reset_parameters(self):
         # init input_proj
         for proj in self.input_proj:
@@ -214,25 +225,14 @@ class GroundingDINO(nn.Module):
     def init_ref_points(self, use_num_queries):
         self.refpoint_embed = nn.Embedding(use_num_queries, self.query_dim)
 
-    def forward(self, samples: NestedTensor, targets: List = None, **kw):
-        """The forward expects a NestedTensor, which consists of:
-           - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
-           - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
+    def forward(self, batched_inputs):
+        # process images
+        images = self.preprocess_image(batched_inputs)
+        assert isinstance(images, ImageList)
+        samples = nested_tensor_from_tensor_list(images)
 
-        It returns a dict with the following elements:
-           - "pred_logits": the classification logits (including no-object) for all queries.
-                            Shape= [batch_size x num_queries x num_classes]
-           - "pred_boxes": The normalized boxes coordinates for all queries, represented as
-                           (center_x, center_y, width, height). These values are normalized in [0, 1],
-                           relative to the size of each individual image (disregarding possible padding).
-                           See PostProcess for information on how to retrieve the unnormalized bounding box.
-           - "aux_outputs": Optional, only returned when auxilary losses are activated. It is a list of
-                            dictionnaries containing the two above keys for each decoder layer.
-        """
-        if targets is None:
-            captions = kw["captions"]
-        else:
-            captions = [t["caption"] for t in targets]
+        captions = [x["captions"] for x in batched_inputs]
+        names_list = [x["captions"][:-1].split(".") for x in batched_inputs]
 
         # encoder texts
         tokenized = self.tokenizer(captions, padding="longest", return_tensors="pt").to(
@@ -245,6 +245,12 @@ class GroundingDINO(nn.Module):
         ) = generate_masks_with_special_tokens_and_transfer_map(
             tokenized, self.specical_tokens, self.tokenizer
         )
+
+        # prepare targets
+        targets = None
+        if self.training:
+            gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+            targets = self.prepare_targets(gt_instances, cate_to_token_mask_list, names_list)
 
         if text_self_attention_masks.shape[1] > self.max_text_len:
             text_self_attention_masks = text_self_attention_masks[
@@ -267,6 +273,7 @@ class GroundingDINO(nn.Module):
         bert_output = self.bert(**tokenized_for_encoder)  # bs, tokens, 768
 
         encoded_text = self.feat_map(bert_output["last_hidden_state"])  # bs, tokens, d_model=256
+
         text_token_mask = tokenized.attention_mask.bool()  # bs, tokens
         # text_token_mask: True for nomask, False for mask
         # text_self_attention_masks: True for nomask, False for mask
@@ -286,37 +293,39 @@ class GroundingDINO(nn.Module):
             "text_self_attention_masks": text_self_attention_masks,  # bs, tokens, tokens
         }
 
-        # import ipdb; ipdb.set_trace()
-        if isinstance(samples, (list, torch.Tensor)):
-            samples = nested_tensor_from_tensor_list(samples)
-        if not hasattr(self, 'features') or not hasattr(self, 'poss'):
-            self.set_image_tensor(samples)
+        features, poss = self.backbone(samples)
 
-        img_features = []
-        img_masks = []
-        for l, feat in enumerate(self.features):
+        # import ipdb; ipdb.set_trace()
+        # if isinstance(samples, (list, torch.Tensor)):
+        #     samples = nested_tensor_from_tensor_list(samples)
+        # if not hasattr(self, 'features') or not hasattr(self, 'poss'):
+        #     self.set_image_tensor(samples)
+
+        srcs = []
+        masks = []
+        for l, feat in enumerate(features):
             src, mask = feat.decompose()
-            img_features.append(self.input_proj[l](src))
-            img_masks.append(mask)
+            srcs.append(self.input_proj[l](src))
+            masks.append(mask)
             assert mask is not None
-        if self.num_feature_levels > len(img_features):
-            _len_srcs = len(img_features)
+        if self.num_feature_levels > len(srcs):
+            _len_srcs = len(srcs)
             for l in range(_len_srcs, self.num_feature_levels):
                 if l == _len_srcs:
-                    src = self.input_proj[l](self.features[-1].tensors)
+                    src = self.input_proj[l](features[-1].tensors)
                 else:
-                    src = self.input_proj[l](img_features[-1])
+                    src = self.input_proj[l](srcs[-1])
                 m = samples.mask
                 mask = F.interpolate(m[None].float(), size=src.shape[-2:]).to(torch.bool)[0]
                 pos_l = self.backbone[1](NestedTensor(src, mask)).to(src.dtype)
-                img_features.append(src)
-                img_masks.append(mask)
-                self.poss.append(pos_l)
+                srcs.append(src)
+                masks.append(mask)
+                poss.append(pos_l)
 
         input_query_bbox = input_query_label = attn_mask = dn_meta = None
         # 6 * [bs, 900, 256] [bs, 900, 4]
         hs, reference, hs_enc, ref_enc, init_box_proposal = self.transformer(
-            img_features, img_masks, input_query_bbox, self.poss, input_query_label, attn_mask, text_dict
+            srcs, masks, input_query_bbox, poss, input_query_label, attn_mask, text_dict
         )
 
         # deformable-detr-like anchor update
@@ -337,7 +346,9 @@ class GroundingDINO(nn.Module):
                 for layer_cls_embed, layer_hs in zip(self.class_embed, hs)
             ]
         )
-        out = {"pred_logits": outputs_class[-1], "pred_boxes": outputs_coord_list[-1]}
+        out = {"pred_logits": outputs_class[-1],
+               "pred_boxes": outputs_coord_list[-1],
+               "targets": targets}
 
         # # for intermediate outputs
         # if self.aux_loss:
@@ -350,9 +361,9 @@ class GroundingDINO(nn.Module):
         #     interm_class = self.transformer.enc_out_class_embed(hs_enc[-1], text_dict)
         #     out['interm_outputs'] = {'pred_logits': interm_class, 'pred_boxes': interm_coord}
         #     out['interm_outputs_for_matching_pre'] = {'pred_logits': interm_class, 'pred_boxes': init_box_proposal}
-        unset_image_tensor = kw.get('unset_image_tensor', True)
-        if unset_image_tensor:
-            self.unset_image_tensor() ## If necessary
+        # unset_image_tensor = kw.get('unset_image_tensor', True)
+        # if unset_image_tensor:
+        #     self.unset_image_tensor() ## If necessary
         return out
 
     @torch.jit.unused
@@ -365,6 +376,31 @@ class GroundingDINO(nn.Module):
             for a, b in zip(outputs_class[:-1], outputs_coord[:-1])
         ]
 
+    def preprocess_image(self, batched_inputs):
+        images = [self.normalizer(x["image"].to(self.device)) for x in batched_inputs]
+        images = ImageList.from_tensors(images)
+
+        return images
+
+    def normalizer(self, x):
+        pixel_mean = torch.Tensor(self.pixel_mean).to(x.device).view(3, 1, 1)
+        pixel_std = torch.Tensor(self.pixel_std).to(x.device).view(3, 1, 1)
+        return (x - pixel_mean) / pixel_std
+
+    def prepare_targets(self, targets, cate_to_token_mask_list, names_list):
+        new_targets = []
+        for targets_per_image, cate_to_token_mask, names in \
+            zip(targets, cate_to_token_mask_list, names_list):
+            h, w = targets_per_image.image_size
+            image_size_xyxy = torch.as_tensor([w, h, w, h], dtype=torch.float, device=self.device)
+            # gt_class_names = targets_per_image.gt_class_names
+            # gt_classes =  torch.as_tensor([names.index(name) for name in gt_class_names],
+            #                                        dtype=torch.long, device=self.device)
+            gt_classes = targets_per_image.gt_classes
+            gt_boxes = targets_per_image.gt_boxes.tensor / image_size_xyxy
+            gt_boxes = box_xyxy_to_cxcywh(gt_boxes)
+            new_targets.append({"labels": gt_classes, "boxes": gt_boxes})
+        return new_targets
 
 @MODULE_BUILD_FUNCS.registe_with_name(module_name="groundingdino")
 def build_groundingdino(args):

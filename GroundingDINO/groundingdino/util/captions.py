@@ -1,5 +1,5 @@
-from groundingdino.util import box_ops
-from groundingdino.util.vl_utils import build_captions_and_token_span, create_positive_map_from_span
+from models.groundingdino.util import box_ops
+from models.groundingdino.util.vl_utils import build_captions_and_token_span, create_positive_map_from_span
 import torch
 
 

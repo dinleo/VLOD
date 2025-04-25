@@ -1,13 +1,8 @@
 import argparse
-from functools import partial
 import cv2
-import requests
 import os
-from io import BytesIO
 from PIL import Image
 import numpy as np
-from pathlib import Path
-
 
 import warnings
 
@@ -23,11 +18,11 @@ warnings.filterwarnings("ignore")
 
 import gradio as gr
 
-from groundingdino.models import build_model
-from groundingdino.util.slconfig import SLConfig
-from groundingdino.util.utils import clean_state_dict
-from groundingdino.util.inference import annotate, load_image, predict
-import groundingdino.datasets.transforms as T
+from models.groundingdino import get_model
+from models.groundingdino.util.slconfig import SLConfig
+from models.groundingdino.util import clean_state_dict
+from models.groundingdino.util import annotate, predict
+from models import groundingdino as T
 
 from huggingface_hub import hf_hub_download
 
@@ -41,7 +36,7 @@ ckpt_filenmae = "groundingdino_swint_ogc.pth"
 
 def load_model_hf(model_config_path, repo_id, filename, device='cpu'):
     args = SLConfig.fromfile(model_config_path) 
-    model = build_model(args)
+    model = get_model(args)
     args.device = device
 
     cache_file = hf_hub_download(repo_id=repo_id, filename=filename)

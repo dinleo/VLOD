@@ -1,17 +1,15 @@
 import argparse
 import os
-import sys
 
 import numpy as np
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
-import groundingdino.datasets.transforms as T
-from groundingdino.models import build_model
-from groundingdino.util import box_ops
-from groundingdino.util.slconfig import SLConfig
-from groundingdino.util.utils import clean_state_dict, get_phrases_from_posmap
-from groundingdino.util.vl_utils import create_positive_map_from_span
+from models import groundingdino as T
+from models.groundingdino import get_model
+from models.groundingdino.util.slconfig import SLConfig
+from models.groundingdino.util import clean_state_dict, get_phrases_from_posmap
+from models.groundingdino.util.vl_utils import create_positive_map_from_span
 
 
 def plot_boxes_to_image(image_pil, tgt):
@@ -73,7 +71,7 @@ def load_image(image_path):
 def load_model(model_config_path, model_checkpoint_path, cpu_only=False):
     args = SLConfig.fromfile(model_config_path)
     args.device = "cuda" if not cpu_only else "cpu"
-    model = build_model(args)
+    model = get_model(args)
     checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
     load_res = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
     print(load_res)

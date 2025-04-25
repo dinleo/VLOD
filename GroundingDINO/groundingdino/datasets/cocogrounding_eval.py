@@ -25,7 +25,7 @@ import torch
 from pycocotools.coco import COCO
 from .cocoeval import COCOeval
 
-from groundingdino.util.misc import all_gather
+from models.groundingdino.util.misc import all_gather
 
 
 class CocoGroundingEvaluator(object):
