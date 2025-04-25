@@ -144,19 +144,7 @@ def register_all_coco(root="datasets"):
             os.path.join(root, annofile),
         )
 
-register_meta_coco(
-            "train",
-            _get_builtin_metadata("coco"),
-            os.path.join("data/coco", "train2017"),
-            os.path.join("data/coco", "annotations/labels.json"),
-        )
 
-register_meta_coco(
-            "valid",
-            _get_builtin_metadata("coco"),
-            os.path.join("data/coco", "train2017"),
-            os.path.join("data/coco", "annotations/labels.json"),
-        )
 # ==== Predefined datasets and splits for LVIS ==========
 
 _PREDEFINED_SPLITS_LVIS = {

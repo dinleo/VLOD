@@ -7,20 +7,36 @@ from detectron2.data import (
     build_detection_train_loader,
     get_detection_dataset_dicts,
 )
+from detectron2.data import DatasetCatalog, MetadataCatalog
+from detectron2.data.datasets import register_coco_instances
 from detectron2.evaluation import COCOEvaluator
 from models.groundingdino.datasets import DetrDatasetMapper
-from models.groundingdino.datasets.builtin_meta import COCO_CATEGORIES, COCO_NOVEL_CATEGORIES
-thing_classes = [k["name"] for k in COCO_CATEGORIES if k["isthing"] == 1]
-novel_classes = [
-    k["name"] for k in COCO_NOVEL_CATEGORIES if k["isthing"] == 1
-]
-base_categories = [
-    k["name"]
-    for k in COCO_CATEGORIES
-    if k["isthing"] == 1 and k["name"] not in novel_classes
-]
+from models.groundingdino.datasets.builtin_meta import COCO_CATEGORIES, _get_builtin_metadata
 
+thing_classes = [k["name"] for k in COCO_CATEGORIES if k["isthing"] == 1]
 dataloader = OmegaConf.create()
+metadata = _get_builtin_metadata("coco")
+register_coco_instances(
+    "train",
+    {},
+    "data/annotations/labels.json",
+    "data/train2017",
+)
+
+register_coco_instances(
+    "test",
+    {},
+    "data/annotations/labels.json",
+    "data/train2017"
+)
+MetadataCatalog.get("train").set(
+    evaluator_type="coco",
+    **metadata,
+)
+MetadataCatalog.get("test").set(
+    evaluator_type="coco",
+    **metadata,
+)
 
 dataloader.train = L(build_detection_train_loader)(
     dataset=L(get_detection_dataset_dicts)(names="train"),
@@ -50,7 +66,7 @@ dataloader.train = L(build_detection_train_loader)(
             ),
         ],
         is_train=True,
-        mask_on=False,
+        mask_on=False, # segmentation
         img_format="RGB",
         categories_names=thing_classes,
     ),
@@ -59,7 +75,7 @@ dataloader.train = L(build_detection_train_loader)(
 )
 
 dataloader.test = L(build_detection_test_loader)(
-    dataset=L(get_detection_dataset_dicts)(names="valid", filter_empty=False),
+    dataset=L(get_detection_dataset_dicts)(names="test", filter_empty=False),
     mapper=L(DetrDatasetMapper)(
         augmentation=[
             L(T.ResizeShortestEdge)(
@@ -79,3 +95,18 @@ dataloader.test = L(build_detection_test_loader)(
 dataloader.evaluator = L(COCOEvaluator)(
     dataset_name="${..test.dataset.names}",
 )
+
+
+def register_coco_subset(name: str, n: int):
+    if n<=0: return
+    if name not in DatasetCatalog.list():
+        raise ValueError(f"[ERROR] Dataset '{name}' is not registered in DatasetCatalog.")
+
+    full_dataset = DatasetCatalog.get(name)
+    subset = full_dataset[:n]
+    DatasetCatalog.register(name + "_n", lambda: subset)
+    MetadataCatalog.get(name + "_n").set(
+        evaluator_type="coco",
+        **metadata,
+    )
+

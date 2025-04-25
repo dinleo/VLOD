@@ -43,7 +43,6 @@ from models.groundingdino import get_model
 from models.groundingdino.util import ema
 from models.groundingdino.util.events import WandbWriter
 from models.groundingdino.util.utils import clean_state_dict
-from models.groundingdino.util.captions import PostProcessCoco
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
 from criterion import get_criterion
@@ -91,9 +90,6 @@ class Trainer(SimpleTrainer):
         # criterion
         self.criterion = criterion
 
-        # coco
-        self.post_coco = PostProcessCoco(self.model.tokenizer)
-
     def run_step(self):
         """
         Implement the standard training logic described above.
@@ -114,7 +110,6 @@ class Trainer(SimpleTrainer):
         """
         with autocast(enabled=self.amp):
             outputs = self.model(inputs)
-            outputs = self.post_coco(inputs, outputs)
             targets = outputs["targets"]
             loss_dict = self.criterion(outputs, targets)
             if isinstance(loss_dict, torch.Tensor):
@@ -132,7 +127,7 @@ class Trainer(SimpleTrainer):
             self.grad_scaler.scale(losses).backward()
             if self.clip_grad_params is not None:
                 self.grad_scaler.unscale_(self.optimizer)
-                self.clip_grads(self.model.parameters())           
+                self.clip_grads(self.model.parameters())
             if self.iter % self.batch_size_scale == 0:
                 # print(self.iter)
                 self.grad_scaler.step(self.optimizer)
@@ -186,7 +181,8 @@ def load_criterion(model_config):
 
 def do_test(cfg, model, eval_only=False):
     logger = logging.getLogger("detectron2")
-
+    test_loader = instantiate(cfg.dataloader.test)
+    evaluator = instantiate(cfg.dataloader.evaluator)
     if eval_only:
         logger.info("Run evaluation under eval-only mode")
         if cfg.train.model_ema.enabled and cfg.train.model_ema.use_ema_weights_for_eval_only:
@@ -195,7 +191,7 @@ def do_test(cfg, model, eval_only=False):
             logger.info("Run evaluation without EMA.")
         if "evaluator" in cfg.dataloader:
             ret = inference_on_dataset(
-                model, instantiate(cfg.dataloader.test), instantiate(cfg.dataloader.evaluator)
+                model, test_loader, evaluator
             )
             print_csv_format(ret)
         return ret
@@ -203,7 +199,7 @@ def do_test(cfg, model, eval_only=False):
     logger.info("Run evaluation without EMA.")
     if "evaluator" in cfg.dataloader:
         ret = inference_on_dataset(
-            model, instantiate(cfg.dataloader.test), instantiate(cfg.dataloader.evaluator)
+            model, test_loader, evaluator
         )
         print_csv_format(ret)
 
@@ -212,7 +208,7 @@ def do_test(cfg, model, eval_only=False):
             with ema.apply_model_ema_and_restore(model):
                 if "evaluator" in cfg.dataloader:
                     ema_ret = inference_on_dataset(
-                        model, instantiate(cfg.dataloader.test), instantiate(cfg.dataloader.evaluator)
+                        model, test_loader, evaluator
                     )
                     print_csv_format(ema_ret)
                     ret.update(ema_ret)
@@ -327,11 +323,14 @@ def main(args):
     default_setup(cfg, args)
     
     # Enable fast debugging by running several iterations to check for any bugs.
-    if cfg.train.fast_dev_run.enabled:
+    if cfg.train.dev_test:
+        cfg.dataloader.train.total_batch_size = 1
         cfg.train.max_iter = 20
         cfg.train.eval_period = 10
         cfg.train.log_period = 1
-
+    if 0 < cfg.train.eval_sample:
+        cfg.dataloader.test.dataset.names = "test_n"
+    # args.eval_only = True
     if args.eval_only:
         model_cfg = cfg.model  # change the path of the model config file
         checkpoint_path = model_cfg.ckpt  # change the path of the model

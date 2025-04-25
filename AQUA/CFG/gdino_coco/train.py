@@ -1,5 +1,7 @@
 # Common training-related configs that are designed for "tools/train_net.py"
 train = dict(
+    name="",
+    seed=42,
     # Directory where output files are written to
     output_dir="./output",
     # The initialize checkpoint to be loaded
@@ -16,14 +18,14 @@ train = dict(
     ),
     # options for Gradient Clipping during training
     clip_grad=dict(
-        enabled=False,
+        enabled=True,
         params=dict(
             max_norm=0.1,
             norm_type=2,
         ),
     ),
     # options for Fast Debugging
-    fast_dev_run=dict(enabled=False),
+    dev_test=False,
     # options for PeriodicCheckpointer, which saves a model checkpoint
     # after every `checkpointer.period` iterations,
     # and only `checkpointer.max_to_keep` number of checkpoint will be kept.

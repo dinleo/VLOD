@@ -38,7 +38,9 @@ from .bertwarper import (
 from .transformer import build_transformer
 from .utils import MLP, ContrastiveEmbed
 
+from detectron2.modeling import detector_postprocess
 from detectron2.structures import ImageList
+from .post_coco import PostProcessCoco
 
 class GroundingDINO(nn.Module):
     """This is the Cross-Attention Detector module that performs object detection"""
@@ -80,6 +82,7 @@ class GroundingDINO(nn.Module):
             aux_loss: True if auxiliary decoding losses (loss at each decoder layer) are to be used.
         """
         super().__init__()
+        self.device = device
         self.num_queries = num_queries
         self.transformer = transformer
         self.hidden_dim = hidden_dim = transformer.d_model
@@ -105,6 +108,7 @@ class GroundingDINO(nn.Module):
         self.bert.pooler.dense.weight.requires_grad_(False)
         self.bert.pooler.dense.bias.requires_grad_(False)
         self.bert = BertModelWarper(bert_model=self.bert)
+        self.bert.to(self.device)
 
         self.feat_map = nn.Linear(self.bert.config.hidden_size, self.hidden_dim, bias=True)
         nn.init.constant_(self.feat_map.bias.data, 0)
@@ -199,7 +203,9 @@ class GroundingDINO(nn.Module):
         #
         self.pixel_mean = pixel_mean
         self.pixel_std = pixel_std
-        self.device = device
+
+        # coco
+        self.post_coco = PostProcessCoco(self.tokenizer)
 
     def _reset_parameters(self):
         # init input_proj
@@ -364,6 +370,25 @@ class GroundingDINO(nn.Module):
         # unset_image_tensor = kw.get('unset_image_tensor', True)
         # if unset_image_tensor:
         #     self.unset_image_tensor() ## If necessary
+
+        # for coco output
+        # out = self.post_coco(batched_inputs, out)
+
+        if not self.training:
+            # box_cls = out["pred_logits"]
+            # box_pred = out["pred_boxes"]
+            # results = self.dt_inference(box_cls, box_pred, images.image_sizes)
+            results = self.post_coco.select_topk(out, images.image_sizes)
+            processed_results = []
+            for results_per_image, input_per_image, image_size in zip(
+                    results, batched_inputs, images.image_sizes
+            ):
+                height = input_per_image.get("height", image_size[0])
+                width = input_per_image.get("width", image_size[1])
+                r = detector_postprocess(results_per_image, height, width)
+                processed_results.append({"instances": r})
+            return processed_results
+
         return out
 
     @torch.jit.unused
@@ -402,6 +427,50 @@ class GroundingDINO(nn.Module):
             new_targets.append({"labels": gt_classes, "boxes": gt_boxes})
         return new_targets
 
+    def dt_inference(self, box_cls, box_pred, image_sizes):
+        """
+        Arguments:
+            box_cls (Tensor): tensor of shape (batch_size, num_queries, K).
+                The tensor predicts the classification probability for each query.
+            box_pred (Tensor): tensors of shape (batch_size, num_queries, 4).
+                The tensor predicts 4-vector (x,y,w,h) box
+                regression values for every queryx
+            image_sizes (List[torch.Size]): the input image sizes
+
+        Returns:
+            results (List[Instances]): a list of #images elements.
+        """
+        assert len(box_cls) == len(image_sizes)
+        results = []
+        from ..util.box_ops import box_cxcywh_to_xyxy
+        from detectron2.structures import Boxes, Instances
+        # box_cls.shape: 1, 300, 80
+        # box_pred.shape: 1, 300, 4
+        prob = box_cls.sigmoid()
+        topk_values, topk_indexes = torch.topk(
+            prob.view(box_cls.shape[0], -1), 300, dim=1
+        )
+        scores = topk_values
+        topk_boxes = torch.div(topk_indexes, box_cls.shape[2], rounding_mode="floor")
+        labels = topk_indexes % box_cls.shape[2]
+
+        boxes = torch.gather(box_pred, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
+
+        # For each box we assign the best class or the second best if the best on is `no_object`.
+        # scores, labels = F.softmax(box_cls, dim=-1)[:, :, :-1].max(-1)
+
+        for i, (scores_per_image, labels_per_image, box_pred_per_image, image_size) in enumerate(
+            zip(scores, labels, boxes, image_sizes)
+        ):
+            result = Instances(image_size)
+            result.pred_boxes = Boxes(box_cxcywh_to_xyxy(box_pred_per_image))
+
+            result.pred_boxes.scale(scale_x=image_size[1], scale_y=image_size[0])
+            result.scores = scores_per_image
+            result.pred_classes = labels_per_image
+            results.append(result)
+        return results
+
 @MODULE_BUILD_FUNCS.registe_with_name(module_name="groundingdino")
 def build_groundingdino(args):
 
@@ -437,3 +506,12 @@ def build_groundingdino(args):
 
     return model
 
+def recover_to_cls_logits(logits, cate_to_token_mask_list, for_fill=float("-inf")):
+    assert logits.shape[0] == len(cate_to_token_mask_list) # for batch align
+    new_logits = torch.full(logits.shape, for_fill, device=logits.device)
+    for bid, cate_to_token_mask in enumerate(cate_to_token_mask_list):
+        for cate_cid in range(len(cate_to_token_mask)):
+            logits_tmp = logits[bid, :, :cate_to_token_mask.shape[1]]
+            logits_tmp = logits_tmp[:, cate_to_token_mask[cate_cid]]
+            new_logits[bid, :, cate_cid] = torch.max(logits_tmp, dim=-1)[0]
+    return new_logits
