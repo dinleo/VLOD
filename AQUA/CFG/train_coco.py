@@ -5,7 +5,7 @@ from .gdino_coco.dataloader import register_coco_subset
 branch_name = "test"
 iter_per_epoch = 1000
 train_batch = 1
-test_sample = 10
+test_sample = 100
 
 # CFG Instance
 train = get_config("gdino_coco/train.py").train

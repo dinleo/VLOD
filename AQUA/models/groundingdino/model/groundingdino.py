@@ -372,12 +372,9 @@ class GroundingDINO(nn.Module):
         #     self.unset_image_tensor() ## If necessary
 
         # for coco output
-        # out = self.post_coco(batched_inputs, out)
+        out = self.post_coco(batched_inputs, out)
 
         if not self.training:
-            # box_cls = out["pred_logits"]
-            # box_pred = out["pred_boxes"]
-            # results = self.dt_inference(box_cls, box_pred, images.image_sizes)
             results = self.post_coco.select_topk(out, images.image_sizes)
             processed_results = []
             for results_per_image, input_per_image, image_size in zip(
@@ -426,50 +423,6 @@ class GroundingDINO(nn.Module):
             gt_boxes = box_xyxy_to_cxcywh(gt_boxes)
             new_targets.append({"labels": gt_classes, "boxes": gt_boxes})
         return new_targets
-
-    def dt_inference(self, box_cls, box_pred, image_sizes):
-        """
-        Arguments:
-            box_cls (Tensor): tensor of shape (batch_size, num_queries, K).
-                The tensor predicts the classification probability for each query.
-            box_pred (Tensor): tensors of shape (batch_size, num_queries, 4).
-                The tensor predicts 4-vector (x,y,w,h) box
-                regression values for every queryx
-            image_sizes (List[torch.Size]): the input image sizes
-
-        Returns:
-            results (List[Instances]): a list of #images elements.
-        """
-        assert len(box_cls) == len(image_sizes)
-        results = []
-        from ..util.box_ops import box_cxcywh_to_xyxy
-        from detectron2.structures import Boxes, Instances
-        # box_cls.shape: 1, 300, 80
-        # box_pred.shape: 1, 300, 4
-        prob = box_cls.sigmoid()
-        topk_values, topk_indexes = torch.topk(
-            prob.view(box_cls.shape[0], -1), 300, dim=1
-        )
-        scores = topk_values
-        topk_boxes = torch.div(topk_indexes, box_cls.shape[2], rounding_mode="floor")
-        labels = topk_indexes % box_cls.shape[2]
-
-        boxes = torch.gather(box_pred, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
-
-        # For each box we assign the best class or the second best if the best on is `no_object`.
-        # scores, labels = F.softmax(box_cls, dim=-1)[:, :, :-1].max(-1)
-
-        for i, (scores_per_image, labels_per_image, box_pred_per_image, image_size) in enumerate(
-            zip(scores, labels, boxes, image_sizes)
-        ):
-            result = Instances(image_size)
-            result.pred_boxes = Boxes(box_cxcywh_to_xyxy(box_pred_per_image))
-
-            result.pred_boxes.scale(scale_x=image_size[1], scale_y=image_size[0])
-            result.scores = scores_per_image
-            result.pred_classes = labels_per_image
-            results.append(result)
-        return results
 
 @MODULE_BUILD_FUNCS.registe_with_name(module_name="groundingdino")
 def build_groundingdino(args):
