@@ -47,6 +47,58 @@ class BaseCriterion(nn.Module):
         self.loss_bbox = loss_bbox
         self.loss_giou = loss_giou
 
+    def forward(self, outputs, targets):
+        # output_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
+
+        # Collect preds and targets excluding aux_outputs for matcher
+        pred_logits = outputs["pred_logits"]
+        pred_boxes = outputs["pred_boxes"]
+        target_labels_list = [v["labels"] for v in targets]
+        target_boxes_list = [v["boxes"] for v in targets]
+
+        # Retrieve the matching between the outputs of the last layer and the targets
+        indices = self.matcher(
+            pred_logits,
+            pred_boxes,
+            target_labels_list,
+            target_boxes_list,
+        )
+
+        # Compute the average number of target boxes accross all nodes, for normalization purposes
+        num_boxes = sum(len(t["labels"]) for t in targets)
+        num_boxes = torch.as_tensor(
+            [num_boxes], dtype=torch.float, device=next(iter(outputs.values())).device
+        )
+        if is_dist_avail_and_initialized():
+            torch.distributed.all_reduce(num_boxes)
+        num_boxes = torch.clamp(num_boxes / get_world_size(), min=1).item()
+
+        # Compute all losses for DETR-like models
+        losses = {}
+        losses["loss_class"] = self.calculate_class_loss(pred_logits, targets, indices, num_boxes)
+        losses["loss_bbox"] = self.calculate_bbox_loss(pred_boxes, targets, indices, num_boxes)
+        losses["loss_giou"] = self.calculate_giou_loss(pred_boxes, targets, indices, num_boxes)
+
+        # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
+        # if "aux_outputs" in outputs:
+        #     for i, aux_output in enumerate(outputs["aux_outputs"]):
+        #         aux_pred_logits = aux_output["pred_logits"]
+        #         aux_pred_boxes = aux_output["pred_boxes"]
+        #         indices = self.matcher(
+        #             aux_pred_logits, aux_pred_boxes, target_labels_list, target_boxes_list
+        #         )
+        #         losses["loss_class" + f"_{i}"] = self.calculate_class_loss(
+        #             aux_pred_logits, targets, indices, num_boxes
+        #         )
+        #         losses["loss_bbox" + f"_{i}"] = self.calculate_bbox_loss(
+        #             aux_pred_boxes, targets, indices, num_boxes
+        #         )
+        #         losses["loss_giou" + f"_{i}"] = self.calculate_giou_loss(
+        #             aux_pred_boxes, targets, indices, num_boxes
+        #         )
+
+        return losses
+
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
         batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
@@ -104,58 +156,6 @@ class BaseCriterion(nn.Module):
 
         # Compute iou loss
         losses = self.loss_giou(pred_boxes, target_boxes, avg_factor=num_boxes)
-        return losses
-
-    def forward(self, outputs, targets):
-        # output_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
-
-        # Collect preds and targets excluding aux_outputs for matcher
-        pred_logits = outputs["pred_logits"]
-        pred_boxes = outputs["pred_boxes"]
-        target_labels_list = [v["labels"] for v in targets]
-        target_boxes_list = [v["boxes"] for v in targets]
-
-        # Retrieve the matching between the outputs of the last layer and the targets
-        indices = self.matcher(
-            pred_logits,
-            pred_boxes,
-            target_labels_list,
-            target_boxes_list,
-        )
-
-        # Compute the average number of target boxes accross all nodes, for normalization purposes
-        num_boxes = sum(len(t["labels"]) for t in targets)
-        num_boxes = torch.as_tensor(
-            [num_boxes], dtype=torch.float, device=next(iter(outputs.values())).device
-        )
-        if is_dist_avail_and_initialized():
-            torch.distributed.all_reduce(num_boxes)
-        num_boxes = torch.clamp(num_boxes / get_world_size(), min=1).item()
-
-        # Compute all losses for DETR-like models
-        losses = {}
-        losses["loss_class"] = self.calculate_class_loss(pred_logits, targets, indices, num_boxes)
-        losses["loss_bbox"] = self.calculate_bbox_loss(pred_boxes, targets, indices, num_boxes)
-        losses["loss_giou"] = self.calculate_giou_loss(pred_boxes, targets, indices, num_boxes)
-
-        # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
-        # if "aux_outputs" in outputs:
-        #     for i, aux_output in enumerate(outputs["aux_outputs"]):
-        #         aux_pred_logits = aux_output["pred_logits"]
-        #         aux_pred_boxes = aux_output["pred_boxes"]
-        #         indices = self.matcher(
-        #             aux_pred_logits, aux_pred_boxes, target_labels_list, target_boxes_list
-        #         )
-        #         losses["loss_class" + f"_{i}"] = self.calculate_class_loss(
-        #             aux_pred_logits, targets, indices, num_boxes
-        #         )
-        #         losses["loss_bbox" + f"_{i}"] = self.calculate_bbox_loss(
-        #             aux_pred_boxes, targets, indices, num_boxes
-        #         )
-        #         losses["loss_giou" + f"_{i}"] = self.calculate_giou_loss(
-        #             aux_pred_boxes, targets, indices, num_boxes
-        #         )
-
         return losses
 
 @MODULE_BUILD_FUNCS.registe_with_name(module_name="base_criterion")
