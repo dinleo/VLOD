@@ -46,6 +46,9 @@ from models.groundingdino.util.utils import clean_state_dict
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
 from criterion import get_criterion
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+warnings.simplefilter(action='ignore', category=UserWarning)
 
 
 class Trainer(SimpleTrainer):
