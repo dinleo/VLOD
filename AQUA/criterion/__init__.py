@@ -14,6 +14,7 @@
 # limitations under the License.
 
 from .base_criterion import build_criterion
+from .two_stage_criterion import build_criterion
 
 
 def get_criterion(args):
@@ -21,6 +22,6 @@ def get_criterion(args):
     from .registry import MODULE_BUILD_FUNCS
 
     assert args.criterion in MODULE_BUILD_FUNCS._module_dict
-    build_func = MODULE_BUILD_FUNCS.get(args.criterion)
+    build_func = MODULE_BUILD_FUNCS.get(args.criterion) # base_criterion => BaseCriterion
     criterion = build_func(args)
     return criterion

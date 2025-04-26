@@ -1,6 +1,10 @@
+import datetime
 from .gdino_coco.cfg_utils import get_config
 from .gdino_coco.coco_schedule import modified_coco_scheduler
 from .gdino_coco.dataloader import register_coco_subset
+
+
+date_str = datetime.datetime.now().strftime("%m%d_%H%M")
 
 branch_name = "test"
 iter_per_epoch = 1000
@@ -17,7 +21,7 @@ lr_multiplier = modified_coco_scheduler(8, 4, base_steps=iter_per_epoch)
 # modify train
 train.name = branch_name
 train.dev_test = True
-train.output_dir = "./output"
+train.output_dir = f"./output/{branch_name}_{date_str}"
 train.max_iter = 8 * iter_per_epoch
 train.eval_period = train.max_iter
 train.eval_sample = test_sample
@@ -35,9 +39,9 @@ dataloader.train.total_batch_size = train_batch
 register_coco_subset("test", test_sample)
 
 # modify optimizer
+optimizer.lr = 0.00001
 optimizer.weight_decay = 1e-4
 optimizer.params.lr_factor_func = lambda module_name: 0.1 if "backbone" in module_name else 1
-optimizer.lr = 0.001
 
 # ex
 # tg_cat_only = True

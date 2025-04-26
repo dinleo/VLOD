@@ -73,6 +73,7 @@ class BaseCriterion(nn.Module):
             target_labels_list,
             target_boxes_list,
         )
+        idx = self._get_src_permutation_idx(indices)
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_boxes = sum(len(t["labels"]) for t in targets)
@@ -85,9 +86,32 @@ class BaseCriterion(nn.Module):
 
         # Compute all losses for DETR-like models
         losses = {}
-        losses["loss_class"] = self.calculate_class_loss(pred_logits, targets, indices, num_boxes)
-        losses["loss_bbox"] = self.calculate_bbox_loss(pred_boxes, targets, indices, num_boxes)
-        losses["loss_giou"] = self.calculate_giou_loss(pred_boxes, targets, indices, num_boxes)
+
+        # Class
+        num_classes = pred_logits.shape[2]
+        target_classes_o = torch.cat([t["labels"][label_idx] for t, (_, label_idx) in zip(targets, indices)])
+        target_classes = torch.full(
+            pred_logits.shape[:2],
+            num_classes,
+            dtype=torch.int64,
+            device=pred_logits.device,
+        )
+        target_classes[idx] = target_classes_o
+
+        # Compute classification loss
+        pred_logits = pred_logits.view(-1, num_classes)
+        target_classes = target_classes.flatten()
+        losses["loss_class"] = self.loss_class(pred_logits, target_classes, avg_factor=num_boxes)
+
+        # Box
+        pred_boxes_idx = pred_boxes[idx]
+        target_boxes = torch.cat([t["boxes"][i] for t, (_, i) in zip(targets, indices)], dim=0)
+        losses["loss_bbox"] = self.loss_bbox(pred_boxes_idx, target_boxes, avg_factor=num_boxes)
+
+        # GIOU
+        pred_boxes_xy = box_cxcywh_to_xyxy(pred_boxes_idx)
+        target_boxes_xy = box_cxcywh_to_xyxy(target_boxes)
+        losses["loss_giou"] = self.loss_giou(pred_boxes_xy, target_boxes_xy, avg_factor=num_boxes)
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         # if "aux_outputs" in outputs:
@@ -120,53 +144,6 @@ class BaseCriterion(nn.Module):
         batch_idx = torch.cat([torch.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)])
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
-
-    def calculate_class_loss(self, pred_logits, targets, indices, num_boxes):
-        """
-        Args:
-            preds (torch.Tensor): The predicted logits with shape ``(bs, num_queries, num_classes)``.
-            targets (dict):
-            indices (list):
-            num_boxes (int):
-        """
-        idx = self._get_src_permutation_idx(indices)
-        num_classes = pred_logits.shape[2]
-        target_classes_o = torch.cat([t["labels"][label_idx] for t, (_, label_idx) in zip(targets, indices)])
-        target_classes = torch.full(
-            pred_logits.shape[:2],
-            num_classes,
-            dtype=torch.int64,
-            device=pred_logits.device,
-        )
-        target_classes[idx] = target_classes_o
-
-        # Compute classification loss
-        pred_logits = pred_logits.view(-1, num_classes)
-        target_classes = target_classes.flatten()
-        losses = self.loss_class(pred_logits, target_classes, avg_factor=num_boxes)
-        return losses
-
-    def calculate_bbox_loss(self, pred_boxes, targets, indices, num_boxes):
-        idx = self._get_src_permutation_idx(indices)
-        pred_boxes = pred_boxes[idx]
-        target_boxes = torch.cat([t["boxes"][i] for t, (_, i) in zip(targets, indices)], dim=0)
-
-        # Compute regression loss
-        losses = self.loss_bbox(pred_boxes, target_boxes, avg_factor=num_boxes)
-        return losses
-
-    def calculate_giou_loss(self, pred_boxes, targets, indices, num_boxes):
-        idx = self._get_src_permutation_idx(indices)
-        pred_boxes = pred_boxes[idx]
-        target_boxes = torch.cat([t["boxes"][i] for t, (_, i) in zip(targets, indices)], dim=0)
-
-        # Convert box format to (x1, y1, x2, y2)
-        pred_boxes = box_cxcywh_to_xyxy(pred_boxes)
-        target_boxes = box_cxcywh_to_xyxy(target_boxes)
-
-        # Compute iou loss
-        losses = self.loss_giou(pred_boxes, target_boxes, avg_factor=num_boxes)
-        return losses
 
 @MODULE_BUILD_FUNCS.registe_with_name(module_name="base_criterion")
 def build_criterion(args):
