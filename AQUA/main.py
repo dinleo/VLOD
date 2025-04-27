@@ -39,10 +39,10 @@ from detectron2.utils.events import (
 from detectron2.checkpoint import DetectionCheckpointer
 
 from models.groundingdino import get_model
+from models.model_utils import WandbWriter, clean_state_dict, check_frozen
 
-from models.groundingdino.util import ema
-from models.groundingdino.util.events import WandbWriter
-from models.groundingdino.util.utils import clean_state_dict
+from solver.optimizer import ema
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
 import warnings
@@ -234,8 +234,9 @@ def do_train(cfg):
     model_cfg = cfg.model  # change the path of the model config file
     checkpoint_path = model_cfg.ckpt  # change the path of the model
     model = load_model(model_cfg, checkpoint_path)
+
     for name, param in model.named_parameters():
-        if "backbone" in name:
+        if name.startswith("bert"):
             param.requires_grad = False
     # model.set_tsk_id(args.tsk_id)
     # logger = logging.getLogger("detectron2")
@@ -314,6 +315,7 @@ def do_train(cfg):
         start_iter = trainer.iter + 1
     else:
         start_iter = 0
+    check_frozen(model)
     trainer.train(start_iter, cfg.train.max_iter)
 
 
