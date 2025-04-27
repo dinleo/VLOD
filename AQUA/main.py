@@ -169,8 +169,9 @@ class Trainer(SimpleTrainer):
 def load_model(model_config, model_checkpoint_path):
     model_config.device = "cuda"
     model = get_model(model_config)
-    checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
-    load_res = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
+    if model_checkpoint_path:
+        checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
+        load_res = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
     # _ = model.eval()
     return model
 
@@ -181,7 +182,7 @@ def do_test(cfg, model, eval_only=False):
     evaluator = instantiate(cfg.dataloader.evaluator)
     if eval_only:
         logger.info("Run evaluation under eval-only mode")
-        if cfg.train.model_ema.enabled and cfg.train.model_ema.use_ema_weights_for_eval_only:
+        if cfg.runner.model_ema.enabled and cfg.runner.model_ema.use_ema_weights_for_eval_only:
             logger.info("Run evaluation with EMA.")
         else:
             logger.info("Run evaluation without EMA.")
@@ -199,7 +200,7 @@ def do_test(cfg, model, eval_only=False):
         )
         print_csv_format(ret)
 
-        if cfg.train.model_ema.enabled:
+        if cfg.runner.model_ema.enabled:
             logger.info("Run evaluation with EMA.")
             with ema.apply_model_ema_and_restore(model):
                 if "evaluator" in cfg.dataloader:
@@ -241,12 +242,12 @@ def do_train(cfg):
     # model.set_tsk_id(args.tsk_id)
     # logger = logging.getLogger("detectron2")
     # logger.info("Model:\n{}".format(model))
-    model.to(cfg.train.device)
+    model.to(cfg.runner.device)
     # model.add_cls_prompt(cfg.dataloader.train.mapper.categories_names)
 
     # instantiate criterion
     criterion = instantiate(cfg.solver.criterion)
-    criterion.to(cfg.train.device)
+    criterion.to(cfg.runner.device)
 
     # instantiate optimizer
     cfg.solver.optimizer.params.model = model
@@ -256,7 +257,7 @@ def do_train(cfg):
     train_loader = instantiate(cfg.dataloader.train)
     
     # create ddp model
-    model = create_ddp_model(model, **cfg.train.ddp)
+    model = create_ddp_model(model, **cfg.runner.ddp)
 
     # build model ema
     ema.may_build_model_ema(cfg, model)
@@ -266,49 +267,49 @@ def do_train(cfg):
         criterion=criterion,
         dataloader=train_loader,
         optimizer=optim,
-        amp=cfg.train.amp.enabled,
-        clip_grad_params=cfg.train.clip_grad.params if cfg.train.clip_grad.enabled else None,
+        amp=cfg.runner.amp.enabled,
+        clip_grad_params=cfg.runner.clip_grad.params if cfg.runner.clip_grad.enabled else None,
     )
     
     checkpointer = DetectionCheckpointer(
         model,
-        cfg.train.output_dir,
+        cfg.runner.output_dir,
         trainer=trainer,
         # save model ema
         **ema.may_get_ema_checkpointer(cfg, model)
     )
 
     if comm.is_main_process():
-        # writers = default_writers(cfg.train.output_dir, cfg.train.max_iter)
-        output_dir = cfg.train.output_dir
+        # writers = default_writers(cfg.runner.output_dir, cfg.runner.max_iter)
+        output_dir = cfg.runner.output_dir
         PathManager.mkdirs(output_dir)
         writers = [
-            CommonMetricPrinter(cfg.train.max_iter),
+            CommonMetricPrinter(cfg.runner.max_iter),
             JSONWriter(os.path.join(output_dir, "metrics.json")),
             TensorboardXWriter(output_dir),
         ]
-        if not cfg.train.dev_test:
+        if not cfg.runner.dev_test:
             writers.append(WandbWriter(cfg))
 
     trainer.register_hooks(
         [
             hooks.IterationTimer(),
-            ema.EMAHook(cfg, model) if cfg.train.model_ema.enabled else None,
+            ema.EMAHook(cfg, model) if cfg.runner.model_ema.enabled else None,
             hooks.LRScheduler(scheduler=instantiate(cfg.solver.lr_scheduler)),
-            hooks.PeriodicCheckpointer(checkpointer, **cfg.train.checkpointer)
+            hooks.PeriodicCheckpointer(checkpointer, **cfg.runner.checkpointer)
             if comm.is_main_process()
             else None,
-            hooks.EvalHook(cfg.train.eval_period, lambda: do_test(cfg, model)),
+            hooks.EvalHook(cfg.runner.eval_period, lambda: do_test(cfg, model)),
             hooks.PeriodicWriter(
                 writers,
-                period=cfg.train.log_period,
+                period=cfg.runner.log_period,
             )
             if comm.is_main_process()
             else None,
         ]
     )
 
-    checkpointer.resume_or_load(cfg.train.init_checkpoint, resume=args.resume)
+    checkpointer.resume_or_load(cfg.runner.init_checkpoint, resume=args.resume)
     if args.resume and checkpointer.has_checkpoint():
         # The checkpoint stores the training iteration that just finished, thus we start
         # at the next iteration
@@ -316,7 +317,7 @@ def do_train(cfg):
     else:
         start_iter = 0
     check_frozen(model)
-    trainer.train(start_iter, cfg.train.max_iter)
+    trainer.train(start_iter, cfg.runner.max_iter)
 
 
 def main(args):
@@ -325,26 +326,26 @@ def main(args):
     default_setup(cfg, args)
     
     # Enable fast debugging by running several iterations to check for any bugs.
-    if cfg.train.dev_test:
+    if cfg.runner.dev_test:
         cfg.dataloader.train.total_batch_size = 1
-        cfg.train.max_iter = 200
-        cfg.train.eval_period = 100
-        cfg.train.log_period = 1
-    if 0 < cfg.train.eval_sample:
+        cfg.runner.max_iter = 200
+        cfg.runner.eval_period = 100
+        cfg.runner.log_period = 1
+    if 0 < cfg.runner.eval_sample:
         cfg.dataloader.test.dataset.names = "test_sub"
-    # args.eval_only = True
-    if args.eval_only:
+
+    if cfg.runner.eval_only:
         model_cfg = cfg.model  # change the path of the model config file
         checkpoint_path = model_cfg.ckpt  # change the path of the model
         model = load_model(model_cfg, checkpoint_path)
-        model.to(cfg.train.device)
+        model.to(cfg.runner.device)
         model = create_ddp_model(model)
         
         # using ema for evaluation
         ema.may_build_model_ema(cfg, model)
-        DetectionCheckpointer(model, **ema.may_get_ema_checkpointer(cfg, model)).load(cfg.train.init_checkpoint)
+        DetectionCheckpointer(model, **ema.may_get_ema_checkpointer(cfg, model)).load(cfg.model.ckpt)
         # Apply ema state for evaluation
-        if cfg.train.model_ema.enabled and cfg.train.model_ema.use_ema_weights_for_eval_only:
+        if cfg.runner.model_ema.enabled and cfg.runner.model_ema.use_ema_weights_for_eval_only:
             ema.apply_model_ema(model)
         print(do_test(cfg, model, eval_only=True))
     else:

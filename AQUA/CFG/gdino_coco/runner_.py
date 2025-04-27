@@ -1,5 +1,6 @@
-# Common training-related configs that are designed for "tools/train_net.py"
-train = dict(
+from omegaconf import OmegaConf
+
+runner = dict(
     name="",
     seed=42,
     # Directory where output files are written to
@@ -51,4 +52,4 @@ train = dict(
     device="cuda",
     # ...
 )
-# You can use your own instead, together with your own train_net.py
+runner = OmegaConf.create(runner)
