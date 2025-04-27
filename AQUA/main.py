@@ -45,7 +45,6 @@ from models.groundingdino.util.events import WandbWriter
 from models.groundingdino.util.utils import clean_state_dict
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
-from criterion import get_criterion
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=UserWarning)
@@ -175,12 +174,6 @@ def load_model(model_config, model_checkpoint_path):
     # _ = model.eval()
     return model
 
-def load_criterion(model_config):
-    model_config.device = "cuda"
-    criterion = get_criterion(model_config)
-
-    return criterion
-
 
 def do_test(cfg, model, eval_only=False):
     logger = logging.getLogger("detectron2")
@@ -241,18 +234,22 @@ def do_train(cfg):
     model_cfg = cfg.model  # change the path of the model config file
     checkpoint_path = model_cfg.ckpt  # change the path of the model
     model = load_model(model_cfg, checkpoint_path)
+    for name, param in model.named_parameters():
+        if "backbone" in name:
+            param.requires_grad = False
     # model.set_tsk_id(args.tsk_id)
     # logger = logging.getLogger("detectron2")
     # logger.info("Model:\n{}".format(model))
     model.to(cfg.train.device)
     # model.add_cls_prompt(cfg.dataloader.train.mapper.categories_names)
 
-    criterion = load_criterion(model_cfg)
+    # instantiate criterion
+    criterion = instantiate(cfg.solver.criterion)
     criterion.to(cfg.train.device)
 
     # instantiate optimizer
-    cfg.optimizer.params.model = model
-    optim = instantiate(cfg.optimizer)
+    cfg.solver.optimizer.params.model = model
+    optim = instantiate(cfg.solver.optimizer)
 
     # build training loader
     train_loader = instantiate(cfg.dataloader.train)
@@ -296,7 +293,7 @@ def do_train(cfg):
         [
             hooks.IterationTimer(),
             ema.EMAHook(cfg, model) if cfg.train.model_ema.enabled else None,
-            hooks.LRScheduler(scheduler=instantiate(cfg.lr_multiplier)),
+            hooks.LRScheduler(scheduler=instantiate(cfg.solver.lr_scheduler)),
             hooks.PeriodicCheckpointer(checkpointer, **cfg.train.checkpointer)
             if comm.is_main_process()
             else None,
@@ -328,11 +325,11 @@ def main(args):
     # Enable fast debugging by running several iterations to check for any bugs.
     if cfg.train.dev_test:
         cfg.dataloader.train.total_batch_size = 1
-        cfg.train.max_iter = 20
-        cfg.train.eval_period = 10
+        cfg.train.max_iter = 200
+        cfg.train.eval_period = 100
         cfg.train.log_period = 1
     if 0 < cfg.train.eval_sample:
-        cfg.dataloader.test.dataset.names = "test_n"
+        cfg.dataloader.test.dataset.names = "test_sub"
     # args.eval_only = True
     if args.eval_only:
         model_cfg = cfg.model  # change the path of the model config file

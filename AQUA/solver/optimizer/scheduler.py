@@ -1,8 +1,6 @@
-from fvcore.common.param_scheduler import MultiStepParamScheduler
-
 from detectron2.config import LazyCall as L
 from detectron2.solver import WarmupParamScheduler
-
+from fvcore.common.param_scheduler import MultiStepParamScheduler
 
 def default_X_scheduler(num_X):
     """
@@ -75,7 +73,6 @@ lr_multiplier_3x = default_X_scheduler(3)
 lr_multiplier_6x = default_X_scheduler(6)
 lr_multiplier_9x = default_X_scheduler(9)
 
-
 # default scheduler for detr
 lr_multiplier_50ep = default_coco_scheduler(50, 40, 0)
 lr_multiplier_36ep = default_coco_scheduler(36, 30, 0)
@@ -87,7 +84,7 @@ lr_multiplier_50ep_warmup = default_coco_scheduler(50, 40, 1e-3)
 lr_multiplier_12ep_warmup = default_coco_scheduler(12, 11, 1e-3)
 
 
-# 
+#
 def modified_coco_scheduler(epochs=4, decay_epochs=1, warmup_epochs=0, base_steps=5000):
     """
     Returns the config for a default multi-step LR scheduler such as "50epochs",
@@ -106,7 +103,7 @@ def modified_coco_scheduler(epochs=4, decay_epochs=1, warmup_epochs=0, base_step
     total_steps_16bs = epochs * base_steps
     decay_steps = decay_epochs * base_steps
     warmup_steps = warmup_epochs * base_steps
-    
+
     if decay_steps >= total_steps_16bs:
         scheduler = L(MultiStepParamScheduler)(
             values=[1.0],
@@ -123,7 +120,7 @@ def modified_coco_scheduler(epochs=4, decay_epochs=1, warmup_epochs=0, base_step
         warmup_method="linear",
         warmup_factor=0.001,
     )
-    
+
 
 def modified_voc_scheduler(total_epochs=4, decay_epochs1=1, decay_epochs2=2, warmup_epochs=0, base_steps=5000):
     """
@@ -142,7 +139,7 @@ def modified_voc_scheduler(total_epochs=4, decay_epochs1=1, decay_epochs2=2, war
     # total number of iterations assuming 16 batch size, using 1440000/16=90000
     total_steps_16bs = total_epochs * base_steps
     decay_steps = decay_epochs1 * base_steps
-    
+
     warmup_steps = warmup_epochs * base_steps
     scheduler = L(MultiStepParamScheduler)(
         values=[1.0, 0.1, 0.01],

@@ -10,25 +10,25 @@ from detectron2.data import (
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.data.datasets import register_coco_instances
 from detectron2.evaluation import COCOEvaluator
-from models.groundingdino.datasets import DetrDatasetMapper
-from models.groundingdino.datasets.builtin_meta import COCO_CATEGORIES, _get_builtin_metadata
 
-thing_classes = [k["name"] for k in COCO_CATEGORIES if k["isthing"] == 1]
-dataloader = OmegaConf.create()
-metadata = _get_builtin_metadata("coco")
+from datasets import DetrDatasetMapper
+from datasets.builtin_meta import COCO_CATEGORIES, _get_builtin_metadata
+
+# Register Instance
 register_coco_instances(
     "train",
     {},
-    "data/annotations/labels.json",
-    "data/train2017",
+    "inputs/data/annotations/labels.json",
+    "inputs/data/train2017",
 )
-
 register_coco_instances(
     "test",
     {},
-    "data/annotations/labels.json",
-    "data/train2017"
+    "inputs/data/annotations/labels.json",
+    "inputs/data/train2017"
 )
+# Register Metadata
+metadata = _get_builtin_metadata("coco")
 MetadataCatalog.get("train").set(
     evaluator_type="coco",
     **metadata,
@@ -37,6 +37,10 @@ MetadataCatalog.get("test").set(
     evaluator_type="coco",
     **metadata,
 )
+
+
+dataloader = OmegaConf.create()
+thing_classes = [k["name"] for k in COCO_CATEGORIES if k["isthing"] == 1]
 
 dataloader.train = L(build_detection_train_loader)(
     dataset=L(get_detection_dataset_dicts)(names="train"),
@@ -98,15 +102,23 @@ dataloader.evaluator = L(COCOEvaluator)(
 
 
 def register_coco_subset(name: str, n: int):
-    if n<=0: return
+    """
+    Registers subset(={name}_sub) of dataset in the DatasetCatalog and MetadataCatalog.
+    Creates a new dataset entry with the specified subset of the original dataset.
+
+    :param name: The name of the original dataset to create a subset from. Must already be registered in DatasetCatalog.
+    :param n: The number of samples to include in the subset. Must be greater than zero.
+    :return: None
+    :raises ValueError: If the specified dataset name is not found in DatasetCatalog.
+    """
+    if n<1: return
     if name not in DatasetCatalog.list():
         raise ValueError(f"[ERROR] Dataset '{name}' is not registered in DatasetCatalog.")
 
     full_dataset = DatasetCatalog.get(name)
     subset = full_dataset[:n]
-    DatasetCatalog.register(name + "_n", lambda: subset)
-    MetadataCatalog.get(name + "_n").set(
+    DatasetCatalog.register(name + "_sub", lambda: subset)
+    MetadataCatalog.get(name + "_sub").set(
         evaluator_type="coco",
         **metadata,
     )
-

@@ -34,18 +34,8 @@ def try_get_key(cfg, *keys, default=None):
 
 
 def get_config(config_path):
-    """
-    Returns a config object from a config_path.
-
-    Args:
-        config_path (str): config file name relative to groundingdino's "configs/"
-            directory, e.g., "common/train.py"
-
-    Returns:
-        omegaconf.DictConfig: a config object
-    """
     cfg_file = os.path.join("CFG", config_path)
     if not os.path.exists(cfg_file):
-        raise RuntimeError("{} not available in groundingdino configs!".format(config_path))
+        raise RuntimeError("{} not available in configs!".format(config_path))
     cfg = LazyConfig.load(cfg_file)
     return cfg

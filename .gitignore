@@ -153,4 +153,4 @@ test.*
 **/csrc
 **/eggs
 /ZIRA/
-/AQUA/data/
+/AQUA/inputs/data/

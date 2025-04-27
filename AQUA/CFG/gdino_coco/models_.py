@@ -1,3 +1,5 @@
+from omegaconf import OmegaConf
+
 model = dict(
     modelname= "groundingdino",
     criterion= "base_criterion",
@@ -44,4 +46,4 @@ model = dict(
     sub_sentence_present= True
 )
 
-
+model = OmegaConf.create(model)

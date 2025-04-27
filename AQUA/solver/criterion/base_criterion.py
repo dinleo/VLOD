@@ -16,11 +16,10 @@
 import torch
 import torch.nn as nn
 
-from .cri_utils import get_world_size, is_dist_avail_and_initialized
-from .losses import FocalLoss, GIoULoss, L1Loss
-from .matcher.box_util import box_cxcywh_to_xyxy
-from .matcher import  HungarianMatcher, FocalLossCost, GIoUCost, L1Cost
-from .registry import MODULE_BUILD_FUNCS
+from solver.criterion.cri_utils import get_world_size, is_dist_avail_and_initialized
+from solver.losses import FocalLoss, GIoULoss, L1Loss
+from solver.matcher.box_util import box_cxcywh_to_xyxy
+from solver.matcher import  HungarianMatcher, FocalLossCost, GIoUCost, L1Cost
 
 class BaseCriterion(nn.Module):
     """Base criterion for calculating losses for DETR-like models.
@@ -37,10 +36,10 @@ class BaseCriterion(nn.Module):
         cost_class=FocalLossCost(
             alpha=0.25,
             gamma=2.0,
-            weight=2.0,
+            weight=1.0,
         ),
         cost_bbox=L1Cost(weight=5.0),
-        cost_giou=GIoUCost(weight=2.0),
+        cost_giou=GIoUCost(weight=1.0),
         ),
         # Loss
         loss_class: nn.Module = FocalLoss(
@@ -49,7 +48,7 @@ class BaseCriterion(nn.Module):
             loss_weight=1.0,
         ),
         loss_bbox: nn.Module = L1Loss(loss_weight=5.0),
-        loss_giou: nn.Module = GIoULoss(eps=1e-6, loss_weight=2.0),
+        loss_giou: nn.Module = GIoULoss(eps=1e-6, loss_weight=1.0),
     ):
         super().__init__()
         self.matcher = matcher
@@ -144,7 +143,3 @@ class BaseCriterion(nn.Module):
         batch_idx = torch.cat([torch.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)])
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
-
-@MODULE_BUILD_FUNCS.registe_with_name(module_name="base_criterion")
-def build_criterion(args):
-    return BaseCriterion()
