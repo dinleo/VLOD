@@ -11,6 +11,7 @@ import torch.distributed as dist
 import torch.nn as nn
 
 from torch.nn import functional as F
+from torch.onnx.symbolic_opset11 import unsqueeze
 
 from models.aqua.model.base_model import BaseModel, BertConfigW
 from models.aqua.util.dist_utils import all_gather_with_grad, concat_all_gather
@@ -20,34 +21,32 @@ from models.aqua.model.kformer import Kformer
 class AQuA(BaseModel):
     def __init__(
             self,
-            region_feat_dim=256,
+            region_size=1408,
             q_size=768,
             kv_size=768,
-            num_kv_token=64,
+            num_kv_token=32,
     ):
         super().__init__()
 
         # Project vision feature to hidden_size
-        self.region_proj = nn.Linear(region_feat_dim, q_size)
+        self.region_size = region_size
         self.q_size = q_size
         self.kv_size = kv_size
         self.num_kv_token = num_kv_token
 
         self.Kformer, self.kv_tokens = self.init_kformer()
-        self.Kformer.resize_token_embeddings(len(self.tokenizer))
         state_dict = self.Kformer.state_dict()
         for name, param in self.Kformer.named_parameters():
             if "_query" in name:
                 key_orig = name.replace("_query", "")
                 param.data.copy_(state_dict[key_orig])
 
-        self.itm_head = nn.Linear(self.Kformer.config.hidden_size, 2)
-
         self.temp = nn.Parameter(0.07 * torch.ones([]))
-        self.norm = nn.LayerNorm(q_size)
+        self.ln_vision = nn.LayerNorm(region_size)
 
     def init_kformer(self):
         encoder_config = BertConfigW()
+        encoder_config.region_size = self.region_size
         encoder_config.q_size = self.q_size
         encoder_config.kv_size = self.kv_size
         encoder_config.num_kv_token = self.num_kv_token
@@ -58,6 +57,42 @@ class AQuA(BaseModel):
         )
         kv_token.data.normal_(mean=0.0, std=encoder_config.initializer_range)
         return kformer, kv_token
+
+    def load_from_blip2(self, state_dict):
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            new_k = k
+            if new_k == 'query_tokens':
+                new_k = 'kv_tokens'
+            elif new_k == 'temp' or new_k.startswith('ln_vision'):
+                new_k = new_k
+            elif new_k.startswith('Qformer.bert.encoder'):
+                new_k = new_k.replace('Qformer.bert.encoder', 'Kformer.encoder')
+                if '.attention.' in new_k: # include all self-attention
+                    new_k = new_k
+                elif '.crossattention.' in new_k: # discard only value param
+                    if '.self.query.' in new_k:
+                        new_k = new_k.replace('.self.query.', '.self.key.')
+                    elif '.self.key.' in new_k:
+                        new_k = new_k.replace('.self.key.', '.self.region.')
+                    elif 'self.value.' in new_k:
+                        continue
+                elif '_query.' in new_k:
+                    continue
+            else:
+                continue
+            if '.intermediate.' in new_k:
+                new_k = new_k.replace('.intermediate.', '.activation.')
+            elif '.output.' in new_k:
+                new_k = new_k.replace('.output.', '.drn.')
+            new_state_dict[new_k] = v
+
+        missing_keys, unexpected_keys = self.load_state_dict(new_state_dict, strict=False)
+
+        assert missing_keys == self.missing_keys
+        assert unexpected_keys == []
+
+        return ''
 
     def forward(self, samples):
         image = samples["image"]

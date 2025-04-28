@@ -174,7 +174,7 @@ def _remove_ddp(model):
 
 
 def may_build_model_ema(cfg, model):
-    if not cfg.train.model_ema.enabled:
+    if not cfg.runner.model_ema.enabled:
         return
     model = _remove_ddp(model)
     assert not hasattr(
@@ -185,7 +185,7 @@ def may_build_model_ema(cfg, model):
 
 
 def may_get_ema_checkpointer(cfg, model):
-    if not cfg.train.model_ema.enabled:
+    if not cfg.runner.model_ema.enabled:
         return {}
     model = _remove_ddp(model)
     return {"ema_state": model.ema_state}
@@ -237,15 +237,15 @@ def apply_model_ema_and_restore(model, state=None):
 class EMAHook(HookBase):
     def __init__(self, cfg, model):
         model = _remove_ddp(model)
-        assert cfg.train.model_ema.enabled
+        assert cfg.runner.model_ema.enabled
         assert hasattr(
             model, "ema_state"
         ), "Call `may_build_model_ema` first to initilaize the model ema"
         self.model = model
         self.ema = self.model.ema_state
-        self.device = cfg.train.model_ema.device or cfg.model.device
+        self.device = cfg.runner.model_ema.device or cfg.model.device
         self.ema_updater = EMAUpdater(
-            self.model.ema_state, decay=cfg.train.model_ema.decay, device=self.device
+            self.model.ema_state, decay=cfg.runner.model_ema.decay, device=self.device
         )
 
     def before_train(self):

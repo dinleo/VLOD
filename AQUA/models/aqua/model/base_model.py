@@ -25,6 +25,7 @@ from transformers import BertConfig
 class BaseModel(nn.Module):
     def __init__(self):
         super().__init__()
+        self.missing_keys = expected_missing_keys
 
     @property
     def device(self):
@@ -245,6 +246,7 @@ class BertConfigW(BertConfig):
     def __init__(
         self,
         vocab_size=30522,
+        region_size=1408,
         q_size=768,
         kv_size=768,
         num_hidden_layers=12,
@@ -268,6 +270,7 @@ class BertConfigW(BertConfig):
         super().__init__(pad_token_id=pad_token_id, **kwargs)
 
         self.vocab_size = vocab_size
+        self.region_size = region_size
         self.q_size = q_size
         self.kv_size = kv_size
         self.num_hidden_layers = num_hidden_layers
@@ -285,3 +288,42 @@ class BertConfigW(BertConfig):
         self.classifier_dropout = classifier_dropout
         self.add_cross_attention = add_cross_attention
         self.cross_attention_freq = cross_attention_freq
+
+# Newly initialized parameters without using BLIP2 weights when load pre-trained BLIP2-Qformer
+expected_missing_keys = [
+    # Layer 0
+    "Kformer.encoder.layer.0.crossattention.self.query.weight",
+    "Kformer.encoder.layer.0.crossattention.self.query.bias",
+    "Kformer.encoder.layer.0.crossattention.self.value.weight",
+    "Kformer.encoder.layer.0.crossattention.self.value.bias",
+
+    # Layer 2
+    "Kformer.encoder.layer.2.crossattention.self.query.weight",
+    "Kformer.encoder.layer.2.crossattention.self.query.bias",
+    "Kformer.encoder.layer.2.crossattention.self.value.weight",
+    "Kformer.encoder.layer.2.crossattention.self.value.bias",
+
+    # Layer 4
+    "Kformer.encoder.layer.4.crossattention.self.query.weight",
+    "Kformer.encoder.layer.4.crossattention.self.query.bias",
+    "Kformer.encoder.layer.4.crossattention.self.value.weight",
+    "Kformer.encoder.layer.4.crossattention.self.value.bias",
+
+    # Layer 6
+    "Kformer.encoder.layer.6.crossattention.self.query.weight",
+    "Kformer.encoder.layer.6.crossattention.self.query.bias",
+    "Kformer.encoder.layer.6.crossattention.self.value.weight",
+    "Kformer.encoder.layer.6.crossattention.self.value.bias",
+
+    # Layer 8
+    "Kformer.encoder.layer.8.crossattention.self.query.weight",
+    "Kformer.encoder.layer.8.crossattention.self.query.bias",
+    "Kformer.encoder.layer.8.crossattention.self.value.weight",
+    "Kformer.encoder.layer.8.crossattention.self.value.bias",
+
+    # Layer 10
+    "Kformer.encoder.layer.10.crossattention.self.query.weight",
+    "Kformer.encoder.layer.10.crossattention.self.query.bias",
+    "Kformer.encoder.layer.10.crossattention.self.value.weight",
+    "Kformer.encoder.layer.10.crossattention.self.value.bias",
+]

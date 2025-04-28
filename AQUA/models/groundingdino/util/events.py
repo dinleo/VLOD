@@ -36,9 +36,9 @@ class WandbWriter(EventWriter):
 
         self._writer = wandb.init(
             entity=cfg.train.wandb.entity,
-            project=cfg.train.wandb.project,
-            name=cfg.train.name,
-            dir=cfg.train.output_dir,
+            project=cfg.runner.wandb.project,
+            name=cfg.runner.name,
+            dir=cfg.runner.output_dir,
         )
         self._last_write = -1
     

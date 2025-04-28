@@ -61,12 +61,14 @@ logger = logging.get_logger(__name__)
 
 class Kformer(PreTrainedModel):
     """
-    The model can behave as an encoder (with only self-attention) as well as a decoder, in which case a layer of
-    cross-attention is added between the self-attention layers, following the architecture described in `Attention is
-    all you need <https://arxiv.org/abs/1706.03762>`__ by Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit,
-    Llion Jones, Aidan N. Gomez, Lukasz Kaiser and Illia Polosukhin.
-    argument and :obj:`add_cross_attention` set to :obj:`True`; an :obj:`encoder_hidden_states` is then expected as an
-    input to the forward pass.
+    Kformer class
+
+    A subclass of the PreTrainedModel class that represents the Kformer model, a transformer-based architecture derived from BLIP2's Qformer.
+    Contains an encoder and an optional pooler module. Supports multi-scale region features and additional key-value feature inputs.
+
+    Methods:
+        __init__(config, add_pooling_layer=False):
+            Initializes the Kformer model with BertConfig
     """
     config_class = BertConfigW
     base_model_prefix = "Kformer"
@@ -91,30 +93,24 @@ class Kformer(PreTrainedModel):
         if isinstance(module, nn.Linear) and module.bias is not None:
             module.bias.data.zero_()
 
-    def load_from_blip(self, state_dict):
-        new_state_dict = {}
-        for k, v in state_dict.items():
-            if k.startswith('Qformer.bert.encoder.'):
-                new_k = k.replace('Qformer.bert.', '')
-                if '.intermediate_query.' in new_k or '.output_query.' in new_k:
-                    continue
-                if '.intermediate.' in new_k:
-                    new_k = new_k.replace('.intermediate.', '.activation.')
-                elif '.output.' in new_k:
-                    new_k = new_k.replace('.output.', '.drn.')
-                new_state_dict[new_k] = v
-
-        self.load_state_dict(new_state_dict, strict=True)
-
     def forward(
         self,
-        q_feature,
+        multiscale_region_feature,
         kv_feature,
         q_mask=None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
     ):
+        """
+        :param multiscale_region_feature: Multiscale region features with [Scale, Batch, Region, Dim=1408] shape.
+        :param kv_feature: Key-value features used for the attention computation.
+        :param q_mask: Optional mask applied on the query sequence for attention computation. Defaults to `None`, in which case all positions are attended.
+        :param output_attentions: Whether or not to return attention probabilities. Defaults to the value in the model configuration.
+        :param output_hidden_states: Whether or not to return all hidden states. Defaults to the value in the model configuration.
+        :param return_dict: Whether or not to return outputs as a dictionary. Defaults to the value in the model configuration.
+        :return: If `return_dict` is False, returns the final sequence output tensor. If `return_dict` is True, returns a `BaseModelOutputWithCrossAttentions` object containing the last hidden state, hidden states (if `output_hidden_states` is True), attentions (if `output_attentions` is True), and cross attentions (if applicable).
+        """
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -131,22 +127,20 @@ class Kformer(PreTrainedModel):
             else self.config.use_return_dict
         )
 
-        # use_cache = use_cache if use_cache is not None else self.config.use_cache
-
-        input_shape = q_feature.size()[:-1]
+        input_shape = multiscale_region_feature.size()[1:-1]
         batch_size, seq_length = input_shape
 
         if q_mask is None:
             q_mask = torch.ones(
-                (batch_size, seq_length), device=q_feature.device
+                (batch_size, seq_length), device=kv_feature.device
             )
 
         extended_q_mask = self.get_extended_attention_mask(
-            q_mask, input_shape, q_feature.device
+            q_mask, input_shape, kv_feature.device
         )
 
         encoder_outputs = self.encoder(
-            q_feature=q_feature,
+            multiscale_region_feature=multiscale_region_feature,
             kv_feature=kv_feature,
             q_mask=extended_q_mask,
             output_attentions=output_attentions,
@@ -223,13 +217,18 @@ class BertEncoder(nn.Module):
 
     def forward(
         self,
-        q_feature,
+        multiscale_region_feature,
         kv_feature,
-        q_mask=None,
+        q_mask,
         output_attentions=False,
         output_hidden_states=False,
         return_dict=True,
     ):
+        q_feature = multiscale_region_feature[0]
+        scale = multiscale_region_feature.size()[0]
+        scale_interval = self.config.num_hidden_layers // (scale - 1)
+        assert self.config.num_hidden_layers  % (scale - 1) == 0
+
         all_self_attentions = () if output_attentions else None
         all_hidden_states = (q_feature,) if output_hidden_states else None
         all_cross_attentions = (
@@ -238,11 +237,14 @@ class BertEncoder(nn.Module):
 
         for i in range(self.config.num_hidden_layers):
             layer_module = self.layer[i]
+            scale_idx = 1 + i // scale_interval
+            region_feature = multiscale_region_feature[scale_idx]
             layer_outputs = layer_module(
-                q_feature,
-                q_mask,
-                kv_feature,
-                output_attentions,
+                q_feature=q_feature,
+                kv_feature=kv_feature,
+                q_mask=q_mask,
+                region_feature=region_feature,
+                output_attentions=output_attentions,
             )
 
             q_feature = layer_outputs[0]
@@ -296,12 +298,15 @@ class BertLayer(nn.Module):
         self,
         q_feature,
         kv_feature,
-        q_mask=None,
+        q_mask,
+        region_feature,
         output_attentions=False
     ):
         self_attention_outputs = self.attention(
             q_feature=q_feature,
+            kv_feature=None,
             q_mask=q_mask,
+            region_feature=None,
             output_attentions=output_attentions
         )
         q_feature = self_attention_outputs[0]
@@ -312,6 +317,7 @@ class BertLayer(nn.Module):
                 q_feature=q_feature,
                 kv_feature=kv_feature,
                 q_mask=q_mask,
+                region_feature=region_feature,
                 output_attentions=output_attentions,
             )
             q_feature = cross_attention_outputs[0]
@@ -337,14 +343,16 @@ class BertAttention(nn.Module):
         self,
         q_feature,
         kv_feature,
-        q_mask=None,
+        q_mask,
+        region_feature,
         output_attentions=False,
     ):
         self_outputs = self.self(
-            q_feature,
-            kv_feature,
-            q_mask,
-            output_attentions,
+            q_feature=q_feature,
+            kv_feature=kv_feature,
+            q_mask=q_mask,
+            region_feature=region_feature,
+            output_attentions=output_attentions,
         )
         attention_output = self.drn(self_outputs[0], q_feature)
         outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
@@ -356,7 +364,7 @@ class BertSelfAttention(nn.Module):
         super().__init__()
         self.config = config
         if config.q_size % config.num_attention_heads != 0 and not hasattr(
-            config, "embedding_size"
+                config, "embedding_size"
         ):
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
@@ -371,6 +379,7 @@ class BertSelfAttention(nn.Module):
         if is_cross_attention:
             self.key = nn.Linear(config.kv_size, self.all_head_size)
             self.value = nn.Linear(config.kv_size, self.all_head_size)
+            self.region = nn.Linear(config.region_size, self.all_head_size)
         else:
             self.key = nn.Linear(config.q_size, self.all_head_size)
             self.value = nn.Linear(config.q_size, self.all_head_size)
@@ -380,8 +389,8 @@ class BertSelfAttention(nn.Module):
             config, "position_embedding_type", "absolute"
         )
         if (
-            self.position_embedding_type == "relative_key"
-            or self.position_embedding_type == "relative_key_query"
+                self.position_embedding_type == "relative_key"
+                or self.position_embedding_type == "relative_key_query"
         ):
             self.max_position_embeddings = config.max_position_embeddings
             self.distance_embedding = nn.Embedding(
@@ -403,7 +412,7 @@ class BertSelfAttention(nn.Module):
 
     def transpose_for_scores(self, x):
         """
-        (Batch, Token, Dim) -> (Batch, Head, Token, Dim/Head)
+        (Batch, Token, Dim) -> (Batch, Head, Token, Dim/Head==64)
         """
         new_x_shape = x.size()[:-1] + (
             self.num_attention_heads,
@@ -415,8 +424,9 @@ class BertSelfAttention(nn.Module):
     def forward(
         self,
         q_feature,
-        kv_feature=None,
-        q_mask=None,
+        kv_feature,
+        q_mask,
+        region_feature,
         output_attentions=False,
     ):
 
@@ -425,14 +435,16 @@ class BertSelfAttention(nn.Module):
         # such that the encoder's padding tokens are not attended to.
         is_cross_attention = kv_feature is not None
 
+        query_layer = self.transpose_for_scores(self.query(q_feature))
         if is_cross_attention:
             key_layer = self.transpose_for_scores(self.key(kv_feature))
             value_layer = self.transpose_for_scores(self.value(kv_feature))
+            region_layer = self.transpose_for_scores(self.region(region_feature))
+            query_layer += region_layer
         else:
             key_layer = self.transpose_for_scores(self.key(q_feature))
             value_layer = self.transpose_for_scores(self.value(q_feature))
 
-        query_layer = self.transpose_for_scores(self.query(q_feature))
 
         # past_key_value = (key_layer, value_layer)
 
