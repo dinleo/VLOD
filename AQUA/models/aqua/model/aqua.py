@@ -12,57 +12,52 @@ import torch.nn as nn
 
 from torch.nn import functional as F
 
-from .base_model import BaseModel, BertConfigW
-from ..util.dist_utils import all_gather_with_grad, concat_all_gather
-from vformer import Vformer
+from models.aqua.model.base_model import BaseModel, BertConfigW
+from models.aqua.util.dist_utils import all_gather_with_grad, concat_all_gather
+from models.aqua.model.kformer import Kformer
 
 
 class AQuA(BaseModel):
     def __init__(
             self,
             region_feat_dim=256,
-            hidden_size=768,
-            num_query_token=256,
-            num_concepts=256,
-            cross_attention_freq=2,
-            embed_dim=256,
-            max_txt_len=32,
+            q_size=768,
+            kv_size=768,
+            num_kv_token=64,
     ):
         super().__init__()
 
         # Project vision feature to hidden_size
-        self.region_proj = nn.Linear(region_feat_dim, hidden_size)
+        self.region_proj = nn.Linear(region_feat_dim, q_size)
+        self.q_size = q_size
+        self.kv_size = kv_size
+        self.num_kv_token = num_kv_token
 
-        self.Vformer, self.query_tokens = self.init_vformer(
-            num_query_token, self.visual_encoder.num_features, cross_attention_freq
-        )
-        self.Vformer.resize_token_embeddings(len(self.tokenizer))
-        state_dict = self.Vformer.state_dict()
-        for name, param in self.Vformer.named_parameters():
+        self.Kformer, self.kv_tokens = self.init_kformer()
+        self.Kformer.resize_token_embeddings(len(self.tokenizer))
+        state_dict = self.Kformer.state_dict()
+        for name, param in self.Kformer.named_parameters():
             if "_query" in name:
                 key_orig = name.replace("_query", "")
                 param.data.copy_(state_dict[key_orig])
 
-        self.itm_head = nn.Linear(self.Vformer.config.hidden_size, 2)
+        self.itm_head = nn.Linear(self.Kformer.config.hidden_size, 2)
 
         self.temp = nn.Parameter(0.07 * torch.ones([]))
-        self.norm = nn.LayerNorm(hidden_size)
+        self.norm = nn.LayerNorm(q_size)
 
-
-    @classmethod
-    def init_vformer(cls, num_query_token, vision_width, cross_attention_freq=2):
+    def init_kformer(self):
         encoder_config = BertConfigW()
-        encoder_config.encoder_width = vision_width
-        encoder_config.add_cross_attention = True
-        encoder_config.cross_attention_freq = cross_attention_freq
-        encoder_config.query_length = num_query_token
+        encoder_config.q_size = self.q_size
+        encoder_config.kv_size = self.kv_size
+        encoder_config.num_kv_token = self.num_kv_token
 
-        vformer = Vformer(encoder_config)
-        query_tokens = nn.Parameter(
-            torch.zeros(1, num_query_token, encoder_config.hidden_size)
+        kformer = Kformer(encoder_config)
+        kv_token = nn.Parameter(
+            torch.zeros(1, self.num_kv_token, encoder_config.kv_size)
         )
-        query_tokens.data.normal_(mean=0.0, std=encoder_config.initializer_range)
-        return vformer, query_tokens
+        kv_token.data.normal_(mean=0.0, std=encoder_config.initializer_range)
+        return kformer, kv_token
 
     def forward(self, samples):
         image = samples["image"]
@@ -73,9 +68,9 @@ class AQuA(BaseModel):
             image.device
         )
 
-        query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
+        query_tokens = self.kv_tokens.expand(image_embeds.shape[0], -1, -1)
 
-        query_output = self.Vformer.bert(
+        query_output = self.Kformer.bert(
             query_embeds=query_tokens,
             encoder_hidden_states=image_embeds,
             encoder_attention_mask=image_atts,
@@ -94,7 +89,7 @@ class AQuA(BaseModel):
             max_length=self.max_txt_len,
             return_tensors="pt",
         ).to(image.device)
-        text_output = self.Vformer.bert(
+        text_output = self.Kformer.bert(
             text_tokens.input_ids,
             attention_mask=text_tokens.attention_mask,
             return_dict=True,
@@ -191,7 +186,7 @@ class AQuA(BaseModel):
             dim=0,
         )
 
-        query_tokens_itm = self.query_tokens.expand(text_ids_all.shape[0], -1, -1)
+        query_tokens_itm = self.kv_tokens.expand(text_ids_all.shape[0], -1, -1)
         query_atts_itm = torch.ones(query_tokens_itm.size()[:-1], dtype=torch.long).to(
             image.device
         )
@@ -204,7 +199,7 @@ class AQuA(BaseModel):
             image.device
         )
 
-        output_itm = self.Vformer.bert(
+        output_itm = self.Kformer.bert(
             text_ids_all,
             query_embeds=query_tokens_itm,
             attention_mask=attention_mask_all,
@@ -234,7 +229,7 @@ class AQuA(BaseModel):
             image.device
         )
         attention_mask = torch.cat([query_atts, text_tokens.attention_mask], dim=1)
-        lm_output = self.Vformer(
+        lm_output = self.Kformer(
             decoder_input_ids,
             attention_mask=attention_mask,
             past_key_values=query_output.past_key_values,
@@ -298,9 +293,9 @@ class AQuA(BaseModel):
             .fill_(self.tokenizer.bos_token_id)
             .to(image.device)
         )
-        query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
+        query_tokens = self.kv_tokens.expand(image_embeds.shape[0], -1, -1)
 
-        outputs = self.Vformer.generate(
+        outputs = self.Kformer.generate(
             input_ids=input_ids,
             query_embeds=query_tokens,
             max_length=max_length,
@@ -321,9 +316,9 @@ class AQuA(BaseModel):
             image.device
         )
 
-        query_tokens = self.query_tokens.expand(image_embeds.shape[0], -1, -1)
+        query_tokens = self.kv_tokens.expand(image_embeds.shape[0], -1, -1)
 
-        query_output = self.Vformer.bert(
+        query_output = self.Kformer.bert(
             query_embeds=query_tokens,
             encoder_hidden_states=image_embeds,
             encoder_attention_mask=image_atts,
@@ -332,7 +327,7 @@ class AQuA(BaseModel):
         return query_output.last_hidden_state, image_embeds
 
     def forward_text(self, text_tokens):
-        text_output = self.Vformer.bert(
+        text_output = self.Kformer.bert(
             text_tokens.input_ids,
             attention_mask=text_tokens.attention_mask,
             return_dict=True,
@@ -343,12 +338,12 @@ class AQuA(BaseModel):
         image_atts = torch.ones(image_inputs.size()[:-1], dtype=torch.long).to(
             image_inputs.device
         )
-        query_tokens = self.query_tokens.expand(image_inputs.shape[0], -1, -1)
+        query_tokens = self.kv_tokens.expand(image_inputs.shape[0], -1, -1)
         query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(
             image_inputs.device
         )
         attention_mask = torch.cat([query_atts, text_atts], dim=1)
-        output_itm = self.Vformer.bert(
+        output_itm = self.Kformer.bert(
             text_ids,
             query_embeds=query_tokens,
             attention_mask=attention_mask,
@@ -404,11 +399,11 @@ class AQuA(BaseModel):
             image_atts = torch.ones(
                 image_embeds_frozen.size()[:-1], dtype=torch.long
             ).to(self.device)
-            query_tokens = self.query_tokens.expand(
+            query_tokens = self.kv_tokens.expand(
                 image_embeds_frozen.shape[0], -1, -1
             )
 
-            query_output = self.Vformer.bert(
+            query_output = self.Kformer.bert(
                 query_embeds=query_tokens,
                 encoder_hidden_states=image_embeds_frozen,
                 encoder_attention_mask=image_atts,
@@ -427,7 +422,7 @@ class AQuA(BaseModel):
                 self.device
             )
 
-            text_output = self.Vformer.bert(
+            text_output = self.Kformer.bert(
                 text.input_ids,
                 attention_mask=text.attention_mask,
                 return_dict=True,
@@ -444,7 +439,7 @@ class AQuA(BaseModel):
             image_atts = torch.ones(
                 image_embeds_frozen.size()[:-1], dtype=torch.long
             ).to(self.device)
-            query_tokens = self.query_tokens.expand(
+            query_tokens = self.kv_tokens.expand(
                 image_embeds_frozen.shape[0], -1, -1
             )
             query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(
@@ -456,7 +451,7 @@ class AQuA(BaseModel):
             )
             attention_mask = torch.cat([query_atts, text.attention_mask], dim=1)
 
-            output = self.Vformer.bert(
+            output = self.Kformer.bert(
                 text.input_ids,
                 query_embeds=query_tokens,
                 attention_mask=attention_mask,

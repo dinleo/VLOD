@@ -18,8 +18,8 @@ import torch.nn as nn
 import torch.distributed as dist
 import torch.nn.functional as F
 
-from ..util import dist_utils as dist_utils
-from ..util.logger import MetricLogger
+from models.aqua.util import dist_utils as dist_utils
+from models.aqua.util.logger import MetricLogger
 from transformers import BertConfig
 
 class BaseModel(nn.Module):
@@ -187,8 +187,8 @@ class BertConfigW(BertConfig):
         vocab_size (`int`, *optional*, defaults to 30522):
             Vocabulary size of the BERT model. Defines the number of different tokens that can be represented by the
             `inputs_ids` passed when calling [`BertModel`] or [`TFBertModel`].
-        hidden_size (`int`, *optional*, defaults to 768):
-            Dimensionality of the encoder layers and the pooler layer.
+        q_dim (`int`, *optional*, defaults to 768):
+            Dimensionality of the query.
         num_hidden_layers (`int`, *optional*, defaults to 12):
             Number of hidden layers in the Transformer encoder.
         num_attention_heads (`int`, *optional*, defaults to 12):
@@ -245,7 +245,8 @@ class BertConfigW(BertConfig):
     def __init__(
         self,
         vocab_size=30522,
-        hidden_size=768,
+        q_size=768,
+        kv_size=768,
         num_hidden_layers=12,
         num_attention_heads=12,
         intermediate_size=3072,
@@ -260,12 +261,15 @@ class BertConfigW(BertConfig):
         position_embedding_type="absolute",
         use_cache=True,
         classifier_dropout=None,
+        add_cross_attention=True,
+        cross_attention_freq=2,
         **kwargs,
     ):
         super().__init__(pad_token_id=pad_token_id, **kwargs)
 
         self.vocab_size = vocab_size
-        self.hidden_size = hidden_size
+        self.q_size = q_size
+        self.kv_size = kv_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.hidden_act = hidden_act
@@ -279,3 +283,5 @@ class BertConfigW(BertConfig):
         self.position_embedding_type = position_embedding_type
         self.use_cache = use_cache
         self.classifier_dropout = classifier_dropout
+        self.add_cross_attention = add_cross_attention
+        self.cross_attention_freq = cross_attention_freq
