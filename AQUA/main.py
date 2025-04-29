@@ -39,7 +39,7 @@ from detectron2.utils.events import (
 )
 from detectron2.checkpoint import DetectionCheckpointer
 
-from models.model_utils import WandbWriter, clean_state_dict, check_frozen
+from models.model_utils import WandbWriter, clean_state_dict, check_frozen, load_model
 from solver.optimizer import ema
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
@@ -164,16 +164,6 @@ class Trainer(SimpleTrainer):
         if self.grad_scaler and self.amp:
             self.grad_scaler.load_state_dict(state_dict["grad_scaler"])
 
-def load_model(cfg):
-    model = instantiate(cfg.model.build)
-    model.to(cfg.runner.device)
-    model_checkpoint_path = cfg.model.ckpt
-    if model_checkpoint_path:
-        checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
-        _ = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
-    return model
-
-
 def do_test(cfg, model, eval_only=False):
     logger = logging.getLogger("detectron2")
     test_loader = instantiate(cfg.dataloader.test)
@@ -238,7 +228,8 @@ def do_train(cfg):
         print("CUDA is not available, fall back to CPU.")
 
     # instantiate model
-    model = load_model(cfg)
+    model = load_model(cfg.model.build, cfg.model.ckpt)
+    model.to(cfg.runner.device)
 
     # instantiate criterion
     criterion = instantiate(cfg.solver.criterion)
@@ -322,6 +313,7 @@ def main(args):
 
     date_str = datetime.datetime.now().strftime("%m%d_%H%M")
     cfg.runner.output_dir = os.path.join(cfg.runner.output_dir, cfg.runner.name, date_str)
+    cfg.dataloader.evaluator.output_dir = cfg.runner.output_dir
     # Enable fast debugging by running several iterations to check for any bugs.
     if cfg.runner.dev_test:
         cfg.dataloader.train.total_batch_size = 1
@@ -330,7 +322,8 @@ def main(args):
         cfg.runner.log_period = 1
 
     if cfg.runner.eval_only:
-        model = load_model(cfg)
+        model = load_model(cfg.model.build, cfg.model.ckpt)
+        model.to(cfg.runner.device)
         model = create_ddp_model(model)
         
         # using ema for evaluation

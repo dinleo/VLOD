@@ -7,7 +7,6 @@ from solver.criterion.base_criterion import *
 from solver.optimizer.scheduler import modified_coco_scheduler
 
 solver = OmegaConf.create()
-
 solver.optimizer = L(torch.optim.AdamW)(
     params=L(get_default_optimizer_params)(
         # params.model is meant to be set to the model object, before instantiating

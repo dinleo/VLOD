@@ -35,6 +35,7 @@ from .utils import (
     gen_sineembed_for_position,
     get_sine_pos_embed,
 )
+from models.model_utils import safe_init
 
 
 class Transformer(nn.Module):
@@ -928,32 +929,5 @@ class DeformableTransformerDecoderLayer(nn.Module):
 
 
 def build_transformer(args):
-    return Transformer(
-        d_model=args.hidden_dim,
-        dropout=args.dropout,
-        nhead=args.nheads,
-        num_queries=args.num_queries,
-        dim_feedforward=args.dim_feedforward,
-        num_encoder_layers=args.enc_layers,
-        num_decoder_layers=args.dec_layers,
-        normalize_before=args.pre_norm,
-        return_intermediate_dec=True,
-        query_dim=args.query_dim,
-        activation=args.transformer_activation,
-        num_patterns=args.num_patterns,
-        num_feature_levels=args.num_feature_levels,
-        enc_n_points=args.enc_n_points,
-        dec_n_points=args.dec_n_points,
-        learnable_tgt_init=True,
-        # two stage
-        two_stage_type=args.two_stage_type,  # ['no', 'standard', 'early']
-        embed_init_tgt=args.embed_init_tgt,
-        use_text_enhancer=args.use_text_enhancer,
-        use_fusion_layer=args.use_fusion_layer,
-        use_checkpoint=args.use_checkpoint,
-        use_transformer_ckpt=args.use_transformer_ckpt,
-        use_text_cross_attention=args.use_text_cross_attention,
-        text_dropout=args.text_dropout,
-        fusion_dropout=args.fusion_dropout,
-        fusion_droppath=args.fusion_droppath,
-    )
+    model = safe_init(Transformer, args)
+    return model

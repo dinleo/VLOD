@@ -4,14 +4,13 @@
  SPDX-License-Identifier: BSD-3-Clause
  For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
 """
-import logging
-
 import torch
 import torch.nn as nn
 
 from models.aqua.model.base_model import BaseModel, BertConfigW
 from models.aqua.model.kformer import Kformer
 from models.aqua.model.region_feature import RegionFeature
+from models.model_utils import safe_init
 
 
 class AQuA(BaseModel):
@@ -58,9 +57,10 @@ class AQuA(BaseModel):
     def init_region_feature(self):
         return RegionFeature()
 
-    def load_from_blip2(self, state_dict):
+    def load_from_blip2(self, ckpt_path):
+        blip2_state_dict = torch.load(ckpt_path, map_location="cpu")["model"]
         new_state_dict = {}
-        for k, v in state_dict.items():
+        for k, v in blip2_state_dict.items():
             new_k = k
             if new_k == 'query_tokens':
                 new_k = 'kv_tokens'
@@ -84,7 +84,7 @@ class AQuA(BaseModel):
                 if flag:
                     new_k = new_k.replace('Qformer.bert.encoder', 'Kformer.encoder')
             new_state_dict[new_k] = v
-        assert len(new_state_dict) == len(state_dict)
+        assert len(new_state_dict) == len(blip2_state_dict)
         missing_keys, unexpected_keys = self.load_state_dict(new_state_dict, strict=False)
 
         assert missing_keys == self.missing_keys
@@ -105,8 +105,9 @@ class AQuA(BaseModel):
 
         return outputs
 
+
 def build_aqua(args):
-    aqua = AQuA(args)
-    if args.blip2_path:
-        aqua.load_from_blip2(args.blip2_path)
+    aqua = safe_init(AQuA, args)
+    if args.blip_ckpt:
+        aqua.load_from_blip2(args.blip_ckpt)
     return aqua

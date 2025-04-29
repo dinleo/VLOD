@@ -1,12 +1,14 @@
 import torch
 import torch.nn as nn
+from models.model_utils import load_model, safe_init
+
 
 class Stage1(nn.Module):
-    def __init__(self, aqua, backbone, gdino):
+    def __init__(self, aqua, text_backbone=None, image_backbone=None, trex=1):
         super().__init__()
         self.aqua = aqua
-        self.backbone = backbone
-        self.gdino = gdino
+        self.text_backbone = text_backbone
+        self.image_backbone = image_backbone
 
     def forward(self, samples):
         """
@@ -67,5 +69,9 @@ class Stage1(nn.Module):
         return self
 
 def build_stage1(args):
+    args.aqua = load_model(args.aqua.build, args.aqua.ckpt)
+    args.groundingdino = load_model(args.groundingdino.build, args.groundingdino.ckpt)
 
-    return Stage1(args)
+    model = safe_init(Stage1, args)
+
+    return model

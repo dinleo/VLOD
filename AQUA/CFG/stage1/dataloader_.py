@@ -12,10 +12,9 @@ from datasets import DetrDatasetMapper
 from datasets.builtin_meta import COCO_CATEGORIES
 from datasets.datasets_utils import build_dataset, build_sub_dataset
 
-dataloader = OmegaConf.create()
-
 thing_classes = [k["name"] for k in COCO_CATEGORIES if k["isthing"] == 1]
 
+dataloader = OmegaConf.create()
 dataloader.train = L(build_detection_train_loader)(
     dataset=L(build_dataset)(
         name="train",

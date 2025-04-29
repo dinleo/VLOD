@@ -12,10 +12,12 @@
 # modified from mmcv
 
 import wandb
+import torch
 from PIL import Image
 from collections import OrderedDict
 from detectron2.utils.events import EventWriter, get_event_storage
-
+from detectron2.config import instantiate
+import inspect
 
 class WandbWriter(EventWriter):
     """
@@ -66,6 +68,7 @@ class WandbWriter(EventWriter):
         if hasattr(self, "_writer"):
             self._writer.finish()
 
+
 def clean_state_dict(state_dict):
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
@@ -73,6 +76,29 @@ def clean_state_dict(state_dict):
             k = k[7:]  # remove `module.`
         new_state_dict[k] = v
     return new_state_dict
+
+
+def load_model(build, ckpt):
+    model = instantiate(build)
+    if ckpt:
+        checkpoint = torch.load(ckpt, map_location="cpu")
+        _ = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
+
+    return model
+
+
+def safe_init(cls, args: dict):
+    sig = inspect.signature(cls.__init__)
+    valid_keys = sig.parameters.keys() - {'self'}
+
+    filtered_args = {k: v for k, v in args.items() if k in valid_keys}
+
+    missing_keys = valid_keys - filtered_args.keys()
+    if missing_keys:
+        print(f"[Notice] Missing keys for {cls.__name__} (set default): {sorted(missing_keys)}")
+
+    return cls(**filtered_args)
+
 
 def check_frozen(model, max_depth=1):
     def collect_status(module):

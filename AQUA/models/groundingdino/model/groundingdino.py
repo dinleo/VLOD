@@ -40,6 +40,8 @@ from .utils import MLP, ContrastiveEmbed
 from detectron2.modeling import detector_postprocess
 from detectron2.structures import ImageList
 from .post_coco import PostProcessCoco
+from ...model_utils import safe_init
+
 
 class GroundingDINO(nn.Module):
     """This is the Cross-Attention Detector module that performs object detection"""
@@ -434,34 +436,9 @@ def recover_to_cls_logits(logits, cate_to_token_mask_list, for_fill=float("-inf"
 
 
 def build_groundingdino(args):
-    backbone = build_backbone(args)
-    transformer = build_transformer(args)
+    args.backbone = build_backbone(args.backbone_args)
+    args.transformer = build_transformer(args.transformer_args)
 
-    dn_labelbook_size = args.dn_labelbook_size
-    dec_pred_bbox_embed_share = args.dec_pred_bbox_embed_share
-    sub_sentence_present = args.sub_sentence_present
-
-    model = GroundingDINO(
-        backbone,
-        transformer,
-        num_queries=args.num_queries,
-        aux_loss=True,
-        iter_update=True,
-        query_dim=4,
-        num_feature_levels=args.num_feature_levels,
-        nheads=args.nheads,
-        dec_pred_bbox_embed_share=dec_pred_bbox_embed_share,
-        two_stage_type=args.two_stage_type,
-        two_stage_bbox_embed_share=args.two_stage_bbox_embed_share,
-        two_stage_class_embed_share=args.two_stage_class_embed_share,
-        num_patterns=args.num_patterns,
-        dn_number=0,
-        dn_box_noise_scale=args.dn_box_noise_scale,
-        dn_label_noise_ratio=args.dn_label_noise_ratio,
-        dn_labelbook_size=dn_labelbook_size,
-        text_encoder_type=args.text_encoder_type,
-        sub_sentence_present=sub_sentence_present,
-        max_text_len=args.max_text_len,
-    )
+    model = safe_init(GroundingDINO, args)
 
     return model
