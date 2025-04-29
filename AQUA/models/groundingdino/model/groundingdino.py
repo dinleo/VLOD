@@ -423,8 +423,6 @@ class GroundingDINO(nn.Module):
             new_targets.append({"labels": gt_classes, "boxes": gt_boxes})
         return new_targets
 
-from models.model_utils import MODULE_BUILD_FUNCS
-@MODULE_BUILD_FUNCS.registe_with_name(module_name="groundingdino")
 def build_groundingdino(args):
     backbone = build_backbone(args)
     transformer = build_transformer(args)

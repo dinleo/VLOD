@@ -22,10 +22,12 @@ from models.aqua.util import dist_utils as dist_utils
 from models.aqua.util.logger import MetricLogger
 from transformers import BertConfig
 
+
 class BaseModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.missing_keys = expected_missing_keys
+        self.missing_keys = missing_keys
+        self.unexpected_keys = unexpected_keys
 
     @property
     def device(self):
@@ -51,10 +53,8 @@ class BaseModel(nn.Module):
                 params_without_decay.append(param)
             else:
                 params_with_decay.append(param)
-        return [
-            {"params": params_with_decay, "weight_decay": weight_decay},
-            {"params": params_without_decay, "weight_decay": 0.0},
-        ]
+        return [{"params": params_with_decay, "weight_decay": weight_decay},
+            {"params": params_without_decay, "weight_decay": 0.0}, ]
 
 
 def compute_sim_matrix(model, data_loader, **kwargs):
@@ -73,14 +73,9 @@ def compute_sim_matrix(model, data_loader, **kwargs):
     text_embeds = []
     text_atts = []
     for i in range(0, num_text, text_bs):
-        text = texts[i : min(num_text, i + text_bs)]
-        text_input = model.tokenizer(
-            text,
-            padding="max_length",
-            truncation=True,
-            max_length=35,
-            return_tensors="pt",
-        ).to(model.device)
+        text = texts[i: min(num_text, i + text_bs)]
+        text_input = model.tokenizer(text, padding="max_length", truncation=True, max_length=35,
+            return_tensors="pt", ).to(model.device)
         text_feat = model.forward_text(text_input)
         text_embed = F.normalize(model.text_proj(text_feat))
         text_embeds.append(text_embed)
@@ -114,9 +109,7 @@ def compute_sim_matrix(model, data_loader, **kwargs):
         sims_matrix.append(sim_i2t)
     sims_matrix = torch.stack(sims_matrix, dim=0)
 
-    score_matrix_i2t = torch.full(
-        (len(data_loader.dataset.image), len(texts)), -100.0
-    ).to(model.device)
+    score_matrix_i2t = torch.full((len(data_loader.dataset.image), len(texts)), -100.0).to(model.device)
 
     num_tasks = dist_utils.get_world_size()
     rank = dist_utils.get_rank()
@@ -124,53 +117,38 @@ def compute_sim_matrix(model, data_loader, **kwargs):
     start = rank * step
     end = min(sims_matrix.size(0), start + step)
 
-    for i, sims in enumerate(
-        metric_logger.log_every(sims_matrix[start:end], 50, header)
-    ):
+    for i, sims in enumerate(metric_logger.log_every(sims_matrix[start:end], 50, header)):
         topk_sim, topk_idx = sims.topk(k=k_test, dim=0)
         image_inputs = vit_feats[start + i].repeat(k_test, 1, 1).to(model.device)
-        score = model.compute_itm(
-            image_inputs=image_inputs,
-            text_ids=text_ids[topk_idx],
-            text_atts=text_atts[topk_idx],
-        ).float()
+        score = model.compute_itm(image_inputs=image_inputs, text_ids=text_ids[topk_idx],
+            text_atts=text_atts[topk_idx], ).float()
         score_matrix_i2t[start + i, topk_idx] = score + topk_sim
 
     sims_matrix = sims_matrix.t()
-    score_matrix_t2i = torch.full(
-        (len(texts), len(data_loader.dataset.image)), -100.0
-    ).to(model.device)
+    score_matrix_t2i = torch.full((len(texts), len(data_loader.dataset.image)), -100.0).to(model.device)
 
     step = sims_matrix.size(0) // num_tasks + 1
     start = rank * step
     end = min(sims_matrix.size(0), start + step)
 
-    for i, sims in enumerate(
-        metric_logger.log_every(sims_matrix[start:end], 50, header)
-    ):
+    for i, sims in enumerate(metric_logger.log_every(sims_matrix[start:end], 50, header)):
         topk_sim, topk_idx = sims.topk(k=k_test, dim=0)
         image_inputs = vit_feats[topk_idx.cpu()].to(model.device)
-        score = model.compute_itm(
-            image_inputs=image_inputs,
-            text_ids=text_ids[start + i].repeat(k_test, 1),
-            text_atts=text_atts[start + i].repeat(k_test, 1),
-        ).float()
+        score = model.compute_itm(image_inputs=image_inputs, text_ids=text_ids[start + i].repeat(k_test, 1),
+            text_atts=text_atts[start + i].repeat(k_test, 1), ).float()
         score_matrix_t2i[start + i, topk_idx] = score + topk_sim
 
     if dist_utils.is_dist_avail_and_initialized():
         dist.barrier()
-        torch.distributed.all_reduce(
-            score_matrix_i2t, op=torch.distributed.ReduceOp.SUM
-        )
-        torch.distributed.all_reduce(
-            score_matrix_t2i, op=torch.distributed.ReduceOp.SUM
-        )
+        torch.distributed.all_reduce(score_matrix_i2t, op=torch.distributed.ReduceOp.SUM)
+        torch.distributed.all_reduce(score_matrix_t2i, op=torch.distributed.ReduceOp.SUM)
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     logging.info("Evaluation time {}".format(total_time_str))
 
     return score_matrix_i2t.cpu().numpy(), score_matrix_t2i.cpu().numpy()
+
 
 ### A wrapper to view attributes in the config
 class BertConfigW(BertConfig):
@@ -243,30 +221,11 @@ class BertConfigW(BertConfig):
 
     model_type = "bert"
 
-    def __init__(
-        self,
-        vocab_size=30522,
-        region_size=1408,
-        q_size=768,
-        kv_size=768,
-        num_hidden_layers=12,
-        num_attention_heads=12,
-        intermediate_size=3072,
-        hidden_act="gelu",
-        hidden_dropout_prob=0.1,
-        attention_probs_dropout_prob=0.1,
-        max_position_embeddings=512,
-        type_vocab_size=2,
-        initializer_range=0.02,
-        layer_norm_eps=1e-12,
-        pad_token_id=0,
-        position_embedding_type="absolute",
-        use_cache=True,
-        classifier_dropout=None,
-        add_cross_attention=True,
-        cross_attention_freq=2,
-        **kwargs,
-    ):
+    def __init__(self, vocab_size=30522, region_size=1408, q_size=768, kv_size=768, num_hidden_layers=12,
+            num_attention_heads=12, intermediate_size=3072, hidden_act="gelu", hidden_dropout_prob=0.1,
+            attention_probs_dropout_prob=0.1, max_position_embeddings=512, type_vocab_size=2, initializer_range=0.02,
+            layer_norm_eps=1e-12, pad_token_id=0, position_embedding_type="absolute", use_cache=True,
+            classifier_dropout=None, add_cross_attention=True, cross_attention_freq=2, **kwargs, ):
         super().__init__(pad_token_id=pad_token_id, **kwargs)
 
         self.vocab_size = vocab_size
@@ -289,9 +248,9 @@ class BertConfigW(BertConfig):
         self.add_cross_attention = add_cross_attention
         self.cross_attention_freq = cross_attention_freq
 
-# Newly initialized parameters without using BLIP2 weights when load pre-trained BLIP2-Qformer
-expected_missing_keys = [
-    # Layer 0
+
+# Param that Newly added or Initialized
+missing_keys = [# Layer 0
     "Kformer.encoder.layer.0.crossattention.self.query.weight",
     "Kformer.encoder.layer.0.crossattention.self.query.bias",
     "Kformer.encoder.layer.0.crossattention.self.value.weight",
@@ -326,4 +285,107 @@ expected_missing_keys = [
     "Kformer.encoder.layer.10.crossattention.self.query.bias",
     "Kformer.encoder.layer.10.crossattention.self.value.weight",
     "Kformer.encoder.layer.10.crossattention.self.value.bias",
+
+    # region
+    'region_feature.fc.weight', 'region_feature.fc.bias',
+]
+
+# Param that Don't Use from BLIP2
+unexpected_keys = [
+    'vision_proj.weight', 'vision_proj.bias',
+    'text_proj.weight', 'text_proj.bias',
+    'itm_head.weight', 'itm_head.bias',
+    'Qformer.bert.embeddings.position_ids',
+    'Qformer.bert.embeddings.word_embeddings.weight',
+    'Qformer.bert.embeddings.position_embeddings.weight',
+    'Qformer.bert.embeddings.LayerNorm.weight', 'Qformer.bert.embeddings.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.0.crossattention.self.value.weight',
+    'Qformer.bert.encoder.layer.0.crossattention.self.value.bias',
+    'Qformer.bert.encoder.layer.0.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.0.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.0.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.0.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.0.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.0.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.1.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.1.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.1.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.1.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.1.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.1.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.2.crossattention.self.value.weight',
+    'Qformer.bert.encoder.layer.2.crossattention.self.value.bias',
+    'Qformer.bert.encoder.layer.2.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.2.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.2.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.2.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.2.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.2.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.3.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.3.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.3.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.3.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.3.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.3.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.4.crossattention.self.value.weight',
+    'Qformer.bert.encoder.layer.4.crossattention.self.value.bias',
+    'Qformer.bert.encoder.layer.4.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.4.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.4.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.4.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.4.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.4.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.5.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.5.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.5.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.5.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.5.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.5.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.6.crossattention.self.value.weight',
+    'Qformer.bert.encoder.layer.6.crossattention.self.value.bias',
+    'Qformer.bert.encoder.layer.6.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.6.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.6.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.6.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.6.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.6.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.7.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.7.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.7.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.7.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.7.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.7.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.8.crossattention.self.value.weight',
+    'Qformer.bert.encoder.layer.8.crossattention.self.value.bias',
+    'Qformer.bert.encoder.layer.8.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.8.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.8.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.8.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.8.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.8.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.9.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.9.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.9.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.9.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.9.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.9.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.10.crossattention.self.value.weight',
+    'Qformer.bert.encoder.layer.10.crossattention.self.value.bias',
+    'Qformer.bert.encoder.layer.10.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.10.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.10.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.10.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.10.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.10.output_query.LayerNorm.bias',
+    'Qformer.bert.encoder.layer.11.intermediate_query.dense.weight',
+    'Qformer.bert.encoder.layer.11.intermediate_query.dense.bias',
+    'Qformer.bert.encoder.layer.11.output_query.dense.weight',
+    'Qformer.bert.encoder.layer.11.output_query.dense.bias',
+    'Qformer.bert.encoder.layer.11.output_query.LayerNorm.weight',
+    'Qformer.bert.encoder.layer.11.output_query.LayerNorm.bias', 'Qformer.cls.predictions.bias',
+    'Qformer.cls.predictions.transform.dense.weight',
+    'Qformer.cls.predictions.transform.dense.bias',
+    'Qformer.cls.predictions.transform.LayerNorm.weight',
+    'Qformer.cls.predictions.transform.LayerNorm.bias',
+    'Qformer.cls.predictions.decoder.weight', 'Qformer.cls.predictions.decoder.bias'
 ]

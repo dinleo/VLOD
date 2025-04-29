@@ -38,9 +38,7 @@ from detectron2.utils.events import (
 )
 from detectron2.checkpoint import DetectionCheckpointer
 
-from models.groundingdino import get_model
-from models.model_utils import WandbWriter, clean_state_dict, check_frozen
-
+from models import MODULE_BUILD_FUNCS, WandbWriter, clean_state_dict, check_frozen
 from solver.optimizer import ema
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
@@ -168,7 +166,7 @@ class Trainer(SimpleTrainer):
 
 def load_model(model_config, model_checkpoint_path):
     model_config.device = "cuda"
-    model = get_model(model_config)
+    model = MODULE_BUILD_FUNCS.get_model(model_config)
     if model_checkpoint_path:
         checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
         load_res = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
