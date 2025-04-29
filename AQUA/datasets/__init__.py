@@ -26,4 +26,4 @@ from .dataset_mappers import (
 from . import datasets
 from .transforms import ColorAugSSDTransform
 
-# from .builtin import register_all_coco, register_all_lvis, register_all_pascal_voc
+from .builtin import register_all_coco, register_all_lvis, register_all_pascal_voc

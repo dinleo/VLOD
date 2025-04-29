@@ -14,6 +14,8 @@ from detectron2.evaluation import COCOEvaluator
 from datasets import DetrDatasetMapper
 from datasets.builtin_meta import COCO_CATEGORIES, _get_builtin_metadata
 
+dataloader = OmegaConf.create()
+
 # Register Instance
 register_coco_instances(
     "train",
@@ -37,9 +39,6 @@ MetadataCatalog.get("test").set(
     evaluator_type="coco",
     **metadata,
 )
-
-
-dataloader = OmegaConf.create()
 thing_classes = [k["name"] for k in COCO_CATEGORIES if k["isthing"] == 1]
 
 dataloader.train = L(build_detection_train_loader)(

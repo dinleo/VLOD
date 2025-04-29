@@ -27,49 +27,49 @@ from .meta_pascal_voc import register_meta_pascal_voc
 
 # ==== Predefined datasets and splits for COCO ==========
 
-# _PREDEFINED_SPLITS_COCO = {}
-# _PREDEFINED_SPLITS_COCO["coco"] = {
-#     "coco_2014_train": (
-#         "coco/train2014",
-#         "coco/annotations/instances_train2014.json",
-#     ),
-#     "coco_2014_val": (
-#         "coco/val2014",
-#         "coco/annotations/instances_val2014.json",
-#     ),
-#     "coco_2014_minival": (
-#         "coco/val2014",
-#         "coco/annotations/instances_minival2014.json",
-#     ),
-#     "coco_2014_minival_100": (
-#         "coco/val2014",
-#         "coco/annotations/instances_minival2014_100.json",
-#     ),
-#     "coco_2014_valminusminival": (
-#         "coco/val2014",
-#         "coco/annotations/instances_valminusminival2014.json",
-#     ),
-#     "coco_2017_train": (
-#         "coco/train2017",
-#         "coco/annotations/instances_train2017.json",
-#     ),
-#     "coco_2017_val": (
-#         "coco/val2017",
-#         "coco/annotations/instances_val2017.json",
-#     ),
-#     "coco_2017_test": (
-#         "coco/test2017",
-#         "coco/annotations/image_info_test2017.json",
-#     ),
-#     "coco_2017_test-dev": (
-#         "coco/test2017",
-#         "coco/annotations/image_info_test-dev2017.json",
-#     ),
-#     "coco_2017_val_100": (
-#         "coco/val2017",
-#         "coco/annotations/instances_val2017_100.json",
-#     ),
-# }
+_PREDEFINED_SPLITS_COCO = {}
+_PREDEFINED_SPLITS_COCO["coco"] = {
+    "coco_2014_train": (
+        "coco/train2014",
+        "coco/annotations/instances_train2014.json",
+    ),
+    "coco_2014_val": (
+        "coco/val2014",
+        "coco/annotations/instances_val2014.json",
+    ),
+    "coco_2014_minival": (
+        "coco/val2014",
+        "coco/annotations/instances_minival2014.json",
+    ),
+    "coco_2014_minival_100": (
+        "coco/val2014",
+        "coco/annotations/instances_minival2014_100.json",
+    ),
+    "coco_2014_valminusminival": (
+        "coco/val2014",
+        "coco/annotations/instances_valminusminival2014.json",
+    ),
+    "coco_2017_train": (
+        "coco/train2017",
+        "coco/annotations/instances_train2017.json",
+    ),
+    "coco_2017_val": (
+        "coco/val2017",
+        "coco/annotations/instances_val2017.json",
+    ),
+    "coco_2017_test": (
+        "coco/test2017",
+        "coco/annotations/image_info_test2017.json",
+    ),
+    "coco_2017_test-dev": (
+        "coco/test2017",
+        "coco/annotations/image_info_test-dev2017.json",
+    ),
+    "coco_2017_val_100": (
+        "coco/val2017",
+        "coco/annotations/instances_val2017_100.json",
+    ),
+}
 
 
 def register_all_coco(root="datasets"):
@@ -294,11 +294,11 @@ def register_all_pascal_voc(root="datasets"):
 
 
 # Register them all under "./datasets"
-# register_all_coco()
-# register_all_lvis()
-# register_all_pascal_voc()
-#
-#
+register_all_coco()
+register_all_lvis()
+register_all_pascal_voc()
+
+
 # register_coco_instances("mechmind_easy", {},
 #                         "datasets/mechmind_easy/mechmind_easy.json",
 #                         "datasets/mechmind_easy")

@@ -1,10 +1,12 @@
 from omegaconf import OmegaConf
+from detectron2.config import LazyCall as L
+from models.groundingdino import build_groundingdino
 
-model = dict(
-    model_name= "stage1",
-    groundingdino = dict(
-        modelname= "groundingdino",
-        criterion= "base_criterion",
+model = OmegaConf.create()
+model.modelname = "groundingdino"
+model.ckpt = ""
+model.build = L(build_groundingdino)(
+    args= dict(
         backbone= "swin_B_384_22k",
         position_embedding= "sine",
         pe_temperatureH= 20,
@@ -45,8 +47,7 @@ model = dict(
         text_dropout= 0.0,
         fusion_dropout= 0.0,
         fusion_droppath= 0.1,
-        sub_sentence_present= True
-        )
+        sub_sentence_present= True,
+        device="cuda",
+    )
 )
-
-model = OmegaConf.create(model)
