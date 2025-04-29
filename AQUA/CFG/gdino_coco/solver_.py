@@ -20,7 +20,7 @@ solver.optimizer = L(torch.optim.AdamW)(
     weight_decay=0.1,
 )
 
-solver.criterion  = L(BaseCriterion)(
+solver.criterion = L(BaseCriterion)(
     matcher=L(HungarianMatcher)(
         cost_class=L(FocalLossCost)(
             alpha=0.25,
@@ -40,4 +40,11 @@ solver.criterion  = L(BaseCriterion)(
         eps=1e-6,
         loss_weight=1.0,
     ),
+)
+
+solver.lr_scheduler = L(modified_coco_scheduler)(
+    epochs=4,
+    decay_epochs=1,
+    warmup_epochs=0,
+    base_steps=5000,
 )

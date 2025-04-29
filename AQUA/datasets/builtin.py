@@ -294,9 +294,9 @@ def register_all_pascal_voc(root="datasets"):
 
 
 # Register them all under "./datasets"
-register_all_coco()
-register_all_lvis()
-register_all_pascal_voc()
+# register_all_coco()
+# register_all_lvis()
+# register_all_pascal_voc()
 
 
 # register_coco_instances("mechmind_easy", {},

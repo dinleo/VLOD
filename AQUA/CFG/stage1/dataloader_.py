@@ -5,44 +5,24 @@ from detectron2.config import LazyCall as L
 from detectron2.data import (
     build_detection_test_loader,
     build_detection_train_loader,
-    get_detection_dataset_dicts,
 )
-from detectron2.data import DatasetCatalog, MetadataCatalog
-from detectron2.data.datasets import register_coco_instances
 from detectron2.evaluation import COCOEvaluator
 
 from datasets import DetrDatasetMapper
-from datasets.builtin_meta import COCO_CATEGORIES, _get_builtin_metadata
+from datasets.builtin_meta import COCO_CATEGORIES
+from datasets.datasets_utils import build_dataset, build_sub_dataset
 
 dataloader = OmegaConf.create()
 
-# Register Instance
-register_coco_instances(
-    "train",
-    {},
-    "inputs/data/annotations/labels.json",
-    "inputs/data/train2017",
-)
-register_coco_instances(
-    "test",
-    {},
-    "inputs/data/annotations/labels.json",
-    "inputs/data/train2017"
-)
-# Register Metadata
-metadata = _get_builtin_metadata("coco")
-MetadataCatalog.get("train").set(
-    evaluator_type="coco",
-    **metadata,
-)
-MetadataCatalog.get("test").set(
-    evaluator_type="coco",
-    **metadata,
-)
 thing_classes = [k["name"] for k in COCO_CATEGORIES if k["isthing"] == 1]
 
 dataloader.train = L(build_detection_train_loader)(
-    dataset=L(get_detection_dataset_dicts)(names="train"),
+    dataset=L(build_dataset)(
+        name="train",
+        meta_name="coco",
+        json_file="inputs/data/annotations/labels.json",
+        image_root="inputs/data/train2017",
+    ),
     mapper=L(DetrDatasetMapper)(
         augmentation=[
             L(T.RandomFlip)(),
@@ -78,7 +58,34 @@ dataloader.train = L(build_detection_train_loader)(
 )
 
 dataloader.test = L(build_detection_test_loader)(
-    dataset=L(get_detection_dataset_dicts)(names="test", filter_empty=False),
+    dataset=L(build_dataset)(
+        name="test",
+        meta_name="coco",
+        json_file="inputs/data/annotations/labels.json",
+        image_root="inputs/data/train2017",
+        filter_empty=False,
+    ),
+    mapper=L(DetrDatasetMapper)(
+        augmentation=[
+            L(T.ResizeShortestEdge)(
+                short_edge_length=800,
+                max_size=1333,
+            ),
+        ],
+        augmentation_with_crop=None,
+        is_train=False,
+        mask_on=False,
+        img_format="RGB",
+        categories_names=thing_classes,
+    ),
+    num_workers=4,
+)
+
+dataloader.test_sub = L(build_detection_test_loader)(
+    dataset=L(build_sub_dataset)(
+        original_name="test",
+        n=100,
+    ),
     mapper=L(DetrDatasetMapper)(
         augmentation=[
             L(T.ResizeShortestEdge)(
@@ -96,28 +103,6 @@ dataloader.test = L(build_detection_test_loader)(
 )
 
 dataloader.evaluator = L(COCOEvaluator)(
-    dataset_name="${..test.dataset.names}",
+    dataset_name="${..test.dataset.name}",
 )
 
-
-def register_coco_subset(name: str, n: int):
-    """
-    Registers subset(={name}_sub) of dataset in the DatasetCatalog and MetadataCatalog.
-    Creates a new dataset entry with the specified subset of the original dataset.
-
-    :param name: The name of the original dataset to create a subset from. Must already be registered in DatasetCatalog.
-    :param n: The number of samples to include in the subset. Must be greater than zero.
-    :return: None
-    :raises ValueError: If the specified dataset name is not found in DatasetCatalog.
-    """
-    if n<1: return
-    if name not in DatasetCatalog.list():
-        raise ValueError(f"[ERROR] Dataset '{name}' is not registered in DatasetCatalog.")
-
-    full_dataset = DatasetCatalog.get(name)
-    subset = full_dataset[:n]
-    DatasetCatalog.register(name + "_sub", lambda: subset)
-    MetadataCatalog.get(name + "_sub").set(
-        evaluator_type="coco",
-        **metadata,
-    )

@@ -164,10 +164,21 @@ class Trainer(SimpleTrainer):
         if self.grad_scaler and self.amp:
             self.grad_scaler.load_state_dict(state_dict["grad_scaler"])
 
+def load_model(cfg):
+    model = instantiate(cfg.model.build)
+    model.to(cfg.runner.device)
+    model_checkpoint_path = cfg.model.ckpt
+    if model_checkpoint_path:
+        checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
+        _ = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
+    return model
+
 
 def do_test(cfg, model, eval_only=False):
     logger = logging.getLogger("detectron2")
     test_loader = instantiate(cfg.dataloader.test)
+    if 0 < cfg.runner.eval_sample:
+        test_loader = instantiate(cfg.dataloader.test_sub)
     evaluator = instantiate(cfg.dataloader.evaluator)
     if eval_only:
         logger.info("Run evaluation under eval-only mode")
@@ -227,12 +238,7 @@ def do_train(cfg):
         print("CUDA is not available, fall back to CPU.")
 
     # instantiate model
-    model = instantiate(cfg.model.build)
-    model.to(cfg.runner.device)
-    model_checkpoint_path = cfg.model.ckpt
-    if model_checkpoint_path:
-        checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
-        _ = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
+    model = load_model(cfg)
 
     # instantiate criterion
     criterion = instantiate(cfg.solver.criterion)
@@ -322,14 +328,9 @@ def main(args):
         cfg.runner.max_iter = 200
         cfg.runner.eval_period = 100
         cfg.runner.log_period = 1
-    if 0 < cfg.runner.eval_sample:
-        cfg.dataloader.test.dataset.names = "test_sub"
 
     if cfg.runner.eval_only:
-        model_cfg = cfg.model  # change the path of the model config file
-        checkpoint_path = model_cfg.ckpt  # change the path of the model
-        model = load_model(model_cfg, checkpoint_path)
-        model.to(cfg.runner.device)
+        model = load_model(cfg)
         model = create_ddp_model(model)
         
         # using ema for evaluation
