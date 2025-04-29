@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-class MultiModelWrapper(nn.Module):
+class Stage1(nn.Module):
     def __init__(self, aqua, backbone, gdino):
         super().__init__()
         self.aqua = aqua
@@ -67,4 +67,4 @@ class MultiModelWrapper(nn.Module):
         return self
 
 def build_stage1(args):
-    return MultiModelWrapper(args)
+    return Stage1(args)

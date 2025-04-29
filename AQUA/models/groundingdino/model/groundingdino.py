@@ -67,7 +67,6 @@ class GroundingDINO(nn.Module):
         text_encoder_type="bert-base-uncased",
         sub_sentence_present=True,
         max_text_len=256,
-        criterion=None,
         pixel_mean: List[float] = [123.675, 116.280, 103.530],
         pixel_std: List[float] = [123.675, 116.280, 103.530],
         device="cuda"
@@ -423,6 +422,17 @@ class GroundingDINO(nn.Module):
             new_targets.append({"labels": gt_classes, "boxes": gt_boxes})
         return new_targets
 
+def recover_to_cls_logits(logits, cate_to_token_mask_list, for_fill=float("-inf")):
+    assert logits.shape[0] == len(cate_to_token_mask_list) # for batch align
+    new_logits = torch.full(logits.shape, for_fill, device=logits.device)
+    for bid, cate_to_token_mask in enumerate(cate_to_token_mask_list):
+        for cate_cid in range(len(cate_to_token_mask)):
+            logits_tmp = logits[bid, :, :cate_to_token_mask.shape[1]]
+            logits_tmp = logits_tmp[:, cate_to_token_mask[cate_cid]]
+            new_logits[bid, :, cate_cid] = torch.max(logits_tmp, dim=-1)[0]
+    return new_logits
+
+
 def build_groundingdino(args):
     backbone = build_backbone(args)
     transformer = build_transformer(args)
@@ -455,13 +465,3 @@ def build_groundingdino(args):
     )
 
     return model
-
-def recover_to_cls_logits(logits, cate_to_token_mask_list, for_fill=float("-inf")):
-    assert logits.shape[0] == len(cate_to_token_mask_list) # for batch align
-    new_logits = torch.full(logits.shape, for_fill, device=logits.device)
-    for bid, cate_to_token_mask in enumerate(cate_to_token_mask_list):
-        for cate_cid in range(len(cate_to_token_mask)):
-            logits_tmp = logits[bid, :, :cate_to_token_mask.shape[1]]
-            logits_tmp = logits_tmp[:, cate_to_token_mask[cate_cid]]
-            new_logits[bid, :, cate_cid] = torch.max(logits_tmp, dim=-1)[0]
-    return new_logits

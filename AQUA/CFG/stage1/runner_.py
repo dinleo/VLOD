@@ -1,7 +1,6 @@
 from omegaconf import OmegaConf
 
-runner = OmegaConf.create()
-runner.update(
+runner = dict(
     name="",
     seed=42,
     # Directory where output files are written to
@@ -39,9 +38,8 @@ runner.update(
     # logging training info to Wandb
     # note that you should add wandb writer in `train_net.py``
     wandb=dict(
-        entity="",
-        project="",
-        name=""
+        entity="dinleo11",
+        project="vlod",
     ),
     # model ema
     model_ema=dict(
@@ -54,3 +52,4 @@ runner.update(
     device="cuda",
     # ...
 )
+runner = OmegaConf.create(runner)

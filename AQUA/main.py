@@ -17,6 +17,7 @@ import os
 import sys
 import time
 import torch
+import datetime
 from torch.nn.parallel import DataParallel, DistributedDataParallel
 
 from detectron2.config import LazyConfig, instantiate
@@ -38,7 +39,7 @@ from detectron2.utils.events import (
 )
 from detectron2.checkpoint import DetectionCheckpointer
 
-from models import MODULE_BUILD_FUNCS, WandbWriter, clean_state_dict, check_frozen
+from models.model_utils import WandbWriter, clean_state_dict, check_frozen
 from solver.optimizer import ema
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
@@ -164,16 +165,6 @@ class Trainer(SimpleTrainer):
             self.grad_scaler.load_state_dict(state_dict["grad_scaler"])
 
 
-def load_model(model_config, model_checkpoint_path):
-    model_config.device = "cuda"
-    model = MODULE_BUILD_FUNCS.get_model(model_config)
-    if model_checkpoint_path:
-        checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
-        load_res = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
-    # _ = model.eval()
-    return model
-
-
 def do_test(cfg, model, eval_only=False):
     logger = logging.getLogger("detectron2")
     test_loader = instantiate(cfg.dataloader.test)
@@ -229,19 +220,19 @@ def do_train(cfg):
                 checkpointer (dict)
                 ddp (dict)
     """
-    # model = instantiate(cfg.model)
-    model_cfg = cfg.model  # change the path of the model config file
-    checkpoint_path = model_cfg.ckpt  # change the path of the model
-    model = load_model(model_cfg, checkpoint_path)
 
-    for name, param in model.named_parameters():
-        if name.startswith("bert"):
-            param.requires_grad = False
-    # model.set_tsk_id(args.tsk_id)
-    # logger = logging.getLogger("detectron2")
-    # logger.info("Model:\n{}".format(model))
+    if not torch.cuda.is_available():
+        cfg.runner.device = "cpu"
+        cfg.model.build.args.device = "cpu"
+        print("CUDA is not available, fall back to CPU.")
+
+    # instantiate model
+    model = instantiate(cfg.model.build)
     model.to(cfg.runner.device)
-    # model.add_cls_prompt(cfg.dataloader.train.mapper.categories_names)
+    model_checkpoint_path = cfg.model.ckpt
+    if model_checkpoint_path:
+        checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
+        _ = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
 
     # instantiate criterion
     criterion = instantiate(cfg.solver.criterion)
@@ -322,7 +313,9 @@ def main(args):
     cfg = LazyConfig.load(args.config_file)
     cfg = LazyConfig.apply_overrides(cfg, args.opts)
     default_setup(cfg, args)
-    
+
+    date_str = datetime.datetime.now().strftime("%m%d_%H%M")
+    cfg.runner.output_dir = os.path.join(cfg.runner.output_dir, cfg.runner.name, date_str)
     # Enable fast debugging by running several iterations to check for any bugs.
     if cfg.runner.dev_test:
         cfg.dataloader.train.total_batch_size = 1
