@@ -1,4 +1,3 @@
-from detectron2.config import LazyCall as L
 from detectron2.solver import WarmupParamScheduler
 from fvcore.common.param_scheduler import MultiStepParamScheduler
 
@@ -17,18 +16,18 @@ def default_X_scheduler(num_X):
     total_steps_16bs = num_X * 90000
 
     if num_X <= 2:
-        scheduler = L(MultiStepParamScheduler)(
+        scheduler = MultiStepParamScheduler(
             values=[1.0, 0.1, 0.01],
             # note that scheduler is scale-invariant. This is equivalent to
             # milestones=[6, 8, 9]
             milestones=[60000, 80000, 90000],
         )
     else:
-        scheduler = L(MultiStepParamScheduler)(
+        scheduler = MultiStepParamScheduler(
             values=[1.0, 0.1, 0.01],
             milestones=[total_steps_16bs - 60000, total_steps_16bs - 20000, total_steps_16bs],
         )
-    return L(WarmupParamScheduler)(
+    return WarmupParamScheduler(
         scheduler=scheduler,
         warmup_length=1000 / total_steps_16bs,
         warmup_method="linear",
@@ -54,11 +53,11 @@ def default_coco_scheduler(epochs=50, decay_epochs=40, warmup_epochs=0):
     total_steps_16bs = epochs * 7500
     decay_steps = decay_epochs * 7500
     warmup_steps = warmup_epochs * 7500
-    scheduler = L(MultiStepParamScheduler)(
+    scheduler = MultiStepParamScheduler(
         values=[1.0, 0.1],
         milestones=[decay_steps, total_steps_16bs],
     )
-    return L(WarmupParamScheduler)(
+    return WarmupParamScheduler(
         scheduler=scheduler,
         warmup_length=warmup_steps / total_steps_16bs,
         warmup_method="linear",
@@ -105,16 +104,16 @@ def modified_coco_scheduler(epochs=4, decay_epochs=1, warmup_epochs=0, base_step
     warmup_steps = warmup_epochs * base_steps
 
     if decay_steps >= total_steps_16bs:
-        scheduler = L(MultiStepParamScheduler)(
+        scheduler = MultiStepParamScheduler(
             values=[1.0],
             milestones=[total_steps_16bs],
         )
     else:
-        scheduler = L(MultiStepParamScheduler)(
+        scheduler = MultiStepParamScheduler(
             values=[1.0, 0.1],
             milestones=[decay_steps, total_steps_16bs],
         )
-    return L(WarmupParamScheduler)(
+    return WarmupParamScheduler(
         scheduler=scheduler,
         warmup_length=warmup_steps / total_steps_16bs,
         warmup_method="linear",
@@ -141,11 +140,11 @@ def modified_voc_scheduler(total_epochs=4, decay_epochs1=1, decay_epochs2=2, war
     decay_steps = decay_epochs1 * base_steps
 
     warmup_steps = warmup_epochs * base_steps
-    scheduler = L(MultiStepParamScheduler)(
+    scheduler = MultiStepParamScheduler(
         values=[1.0, 0.1, 0.01],
         milestones=[decay_steps, decay_epochs2 * base_steps, total_steps_16bs],
     )
-    return L(WarmupParamScheduler)(
+    return WarmupParamScheduler(
         scheduler=scheduler,
         warmup_length=warmup_steps / total_steps_16bs,
         warmup_method="linear",

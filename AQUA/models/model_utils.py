@@ -24,7 +24,7 @@ class WandbWriter(EventWriter):
     Write all scalars to a wandb file.
     """
 
-    def __init__(self, cfg, window_size: int = 20, **kwargs):
+    def __init__(self, runner_cfg, window_size: int = 20, **kwargs):
         """
         Args:
             log_dir (str): the directory to save the output events
@@ -35,10 +35,10 @@ class WandbWriter(EventWriter):
         self._window_size = window_size
 
         self._writer = wandb.init(
-            entity=cfg.runner.wandb.entity,
-            project=cfg.runner.wandb.project,
-            name=cfg.runner.name,
-            dir=cfg.runner.output_dir,
+            entity=runner_cfg.wandb.entity,
+            project=runner_cfg.wandb.project,
+            name=runner_cfg.name,
+            dir=runner_cfg.output_dir,
         )
         self._last_write = -1
 

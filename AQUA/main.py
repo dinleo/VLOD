@@ -17,14 +17,12 @@ import os
 import sys
 import time
 import torch
-import datetime
 from torch.nn.parallel import DataParallel, DistributedDataParallel
 
 from detectron2.config import LazyConfig, instantiate
 from detectron2.engine import (
     SimpleTrainer,
     default_argument_parser,
-    default_setup,
     hooks,
     launch,
 )
@@ -41,6 +39,7 @@ from detectron2.checkpoint import DetectionCheckpointer
 
 from models.model_utils import WandbWriter, clean_state_dict, check_frozen, load_model
 from solver.optimizer import ema
+from CFG.cfg_utils import default_setup_detectron2
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
@@ -169,6 +168,7 @@ def do_test(cfg, model, eval_only=False):
     test_loader = instantiate(cfg.dataloader.test)
     if 0 < cfg.runner.eval_sample:
         test_loader = instantiate(cfg.dataloader.test_sub)
+        cfg.dataloader.evaluator.dataset_name = "test_sub"
     evaluator = instantiate(cfg.dataloader.evaluator)
     if eval_only:
         logger.info("Run evaluation under eval-only mode")
@@ -209,9 +209,9 @@ def do_train(cfg):
             model: instantiate to a module
             dataloader.{train,test}: instantiate to dataloaders
             dataloader.evaluator: instantiate to evaluator for test set
-            optimizer: instantaite to an optimizer
-            lr_multiplier: instantiate to a fvcore scheduler
-            train: other misc config defined in `configs/common/train.py`, including:
+            solver.optimizer: instantiate to an optimizer
+            solver.lr_scheduler: instantiate to a fvcore scheduler
+            runner: other misc config defined in `CFG/{project_name}/runner_.py`, including:
                 output_dir (str)
                 init_checkpoint (str)
                 amp.enabled (bool)
@@ -238,6 +238,7 @@ def do_train(cfg):
     # instantiate optimizer
     cfg.solver.optimizer.params.model = model
     optim = instantiate(cfg.solver.optimizer)
+    lr_scheduler = instantiate(cfg.solver.lr_scheduler)
 
     # build training loader
     train_loader = instantiate(cfg.dataloader.train)
@@ -246,7 +247,7 @@ def do_train(cfg):
     model = create_ddp_model(model, **cfg.runner.ddp)
 
     # build model ema
-    ema.may_build_model_ema(cfg, model)
+    ema.may_build_model_ema(cfg.runner, model)
 
     trainer = Trainer(
         model=model,
@@ -262,7 +263,7 @@ def do_train(cfg):
         cfg.runner.output_dir,
         trainer=trainer,
         # save model ema
-        **ema.may_get_ema_checkpointer(cfg, model)
+        **ema.may_get_ema_checkpointer(cfg.runner, model)
     )
 
     if comm.is_main_process():
@@ -275,13 +276,13 @@ def do_train(cfg):
             TensorboardXWriter(output_dir),
         ]
         if not cfg.runner.dev_test:
-            writers.append(WandbWriter(cfg))
+            writers.append(WandbWriter(cfg.runner))
 
     trainer.register_hooks(
         [
             hooks.IterationTimer(),
-            ema.EMAHook(cfg, model) if cfg.runner.model_ema.enabled else None,
-            hooks.LRScheduler(scheduler=instantiate(cfg.solver.lr_scheduler)),
+            ema.EMAHook(cfg.runner, model) if cfg.runner.model_ema.enabled else None,
+            hooks.LRScheduler(scheduler=lr_scheduler),
             hooks.PeriodicCheckpointer(checkpointer, **cfg.runner.checkpointer)
             if comm.is_main_process()
             else None,
@@ -309,11 +310,8 @@ def do_train(cfg):
 def main(args):
     cfg = LazyConfig.load(args.config_file)
     cfg = LazyConfig.apply_overrides(cfg, args.opts)
-    default_setup(cfg, args)
+    default_setup_detectron2(cfg, args)
 
-    date_str = datetime.datetime.now().strftime("%m%d_%H%M")
-    cfg.runner.output_dir = os.path.join(cfg.runner.output_dir, cfg.runner.name, date_str)
-    cfg.dataloader.evaluator.output_dir = cfg.runner.output_dir
     # Enable fast debugging by running several iterations to check for any bugs.
     if cfg.runner.dev_test:
         cfg.dataloader.train.total_batch_size = 1
@@ -327,8 +325,8 @@ def main(args):
         model = create_ddp_model(model)
         
         # using ema for evaluation
-        ema.may_build_model_ema(cfg, model)
-        DetectionCheckpointer(model, **ema.may_get_ema_checkpointer(cfg, model)).load(cfg.model.ckpt)
+        ema.may_build_model_ema(cfg.runner, model)
+        DetectionCheckpointer(model, **ema.may_get_ema_checkpointer(cfg.runner, model)).load(cfg.model.ckpt)
         # Apply ema state for evaluation
         if cfg.runner.model_ema.enabled and cfg.runner.model_ema.use_ema_weights_for_eval_only:
             ema.apply_model_ema(model)
