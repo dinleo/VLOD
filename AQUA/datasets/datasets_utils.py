@@ -1,14 +1,14 @@
-from detectron2.data.datasets import register_coco_instances
+from detectron2.data.datasets import load_coco_json
 from detectron2.data import DatasetCatalog, MetadataCatalog, get_detection_dataset_dicts
 from datasets.builtin_meta import _get_builtin_metadata
 
 def build_dataset(name, meta_name, json_file, image_root, filter_empty=True):
     if name not in DatasetCatalog.list():
-        register_coco_instances(
-            name,
-            _get_builtin_metadata(meta_name),
-            json_file,
-            image_root,
+        DatasetCatalog.register(name, lambda: load_coco_json(json_file, image_root, name))
+        metadata=_get_builtin_metadata(meta_name)
+        MetadataCatalog.get(name).set(
+            evaluator_type="coco",
+            **metadata,
         )
     return get_detection_dataset_dicts(name, filter_empty=filter_empty)
 
