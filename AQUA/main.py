@@ -17,6 +17,7 @@ import os
 import sys
 import time
 import torch
+import numpy as np
 from torch.nn.parallel import DataParallel, DistributedDataParallel
 
 from detectron2.config import LazyConfig, instantiate
@@ -230,9 +231,9 @@ def do_train(cfg):
     # instantiate model
     model = load_model(cfg.model.build, cfg.model.ckpt)
     model.to(cfg.runner.device)
-    for name, param in model.named_parameters():
-        if "bert" in name:
-            param.requires_grad = False
+    # for name, param in model.named_parameters():
+    #     if "bert" in name:
+    #         param.requires_grad = False
 
     # instantiate criterion
     criterion = instantiate(cfg.solver.criterion)
