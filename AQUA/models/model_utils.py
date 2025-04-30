@@ -82,7 +82,7 @@ def load_model(build, ckpt):
     model = instantiate(build)
     if ckpt:
         checkpoint = torch.load(ckpt, map_location="cpu")
-        _ = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
+        missing, unexpected = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
 
     return model
 

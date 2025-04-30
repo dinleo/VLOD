@@ -5,6 +5,7 @@ from models.groundingdino import build_groundingdino
 model = OmegaConf.create()
 model.modelname = "groundingdino"
 model.ckpt = ""
+
 backbone_args = dict(
     backbone="swin_B_384_22k",
     return_interm_indices=[1, 2, 3],
@@ -13,7 +14,7 @@ backbone_args = dict(
     position_embedding="sine",
     pe_temperatureH=20,
     pe_temperatureW=20,
-    use_checkpoint = "True",
+    use_checkpoint="True",
 )
 transformer_args = dict(
     d_model=256,

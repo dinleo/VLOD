@@ -1,7 +1,6 @@
 from omegaconf import OmegaConf
 from detectron2.config import LazyCall as L
 
-from GroundingDINO.cfg import num_feature_levels
 from models.stage import build_stage1
 from models.aqua import build_aqua
 from models.groundingdino import build_groundingdino
@@ -71,7 +70,6 @@ gdino_args = dict(
     max_text_len=256,
     device="cuda",
 )
-
 
 model.build = L(build_stage1)(
     args= dict(

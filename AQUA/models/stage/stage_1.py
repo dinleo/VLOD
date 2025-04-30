@@ -8,8 +8,8 @@ class Stage1(nn.Module):
         super().__init__()
         self.aqua = aqua
         self.gdino = groundingdino
-        self.text_backbone = text_backbone
-        self.image_backbone = image_backbone
+        # self.text_backbone = text_backbone
+        # self.image_backbone = image_backbone
 
     def forward(self, samples):
 
