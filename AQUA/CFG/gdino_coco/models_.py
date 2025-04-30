@@ -13,6 +13,7 @@ backbone_args = dict(
     position_embedding="sine",
     pe_temperatureH=20,
     pe_temperatureW=20,
+    use_checkpoint = "True",
 )
 transformer_args = dict(
     d_model=256,
