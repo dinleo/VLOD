@@ -1,5 +1,4 @@
 from CFG.cfg_utils import get_config
-from CFG.gdino_coco.solver_ import modified_coco_scheduler
 
 # Base cfg
 project_name = "stage1" # Cur Subdir
@@ -22,7 +21,6 @@ dataloader.train.dataset.filter_empty = False
 dataloader.train.num_workers = 8
 dataloader.train.total_batch_size = 1
 dataloader.test_sub.dataset.n = eval_sample
-dataloader.evaluator.output_dir = runner.output_dir
 
 
 # modify model

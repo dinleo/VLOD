@@ -230,6 +230,9 @@ def do_train(cfg):
     # instantiate model
     model = load_model(cfg.model.build, cfg.model.ckpt)
     model.to(cfg.runner.device)
+    for name, param in model.named_parameters():
+        if "bert" in name:
+            param.requires_grad = False
 
     # instantiate criterion
     criterion = instantiate(cfg.solver.criterion)
