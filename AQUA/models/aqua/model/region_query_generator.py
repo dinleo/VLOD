@@ -16,6 +16,9 @@ from detectron2.modeling.backbone import Backbone, build_backbone
 from detectron2.modeling.postprocessing import detector_postprocess
 from detectron2.modeling.proposal_generator import build_proposal_generator
 from detectron2.modeling.roi_heads import build_roi_heads
+from detectron2.config import get_cfg
+from detectron2.checkpoint import DetectionCheckpointer
+
 
 class GeneralizedRCNN(nn.Module):
     """
@@ -32,8 +35,8 @@ class GeneralizedRCNN(nn.Module):
         backbone: Backbone,
         proposal_generator: nn.Module,
         roi_heads: nn.Module,
-        pixel_mean: Tuple[float],
-        pixel_std: Tuple[float],
+        pixel_mean: Tuple[float]=[123.675, 116.280, 103.530],
+        pixel_std: Tuple[float]=[123.675, 116.280, 103.530],
         input_format: Optional[str] = None,
         vis_period: int = 0,
     ):
@@ -59,9 +62,6 @@ class GeneralizedRCNN(nn.Module):
 
         self.register_buffer("pixel_mean", torch.tensor(pixel_mean).view(-1, 1, 1), False)
         self.register_buffer("pixel_std", torch.tensor(pixel_std).view(-1, 1, 1), False)
-        assert (
-            self.pixel_mean.shape == self.pixel_std.shape
-        ), f"{self.pixel_mean} and {self.pixel_std} have different shapes!"
 
     @classmethod
     def from_config(cls, cfg):
@@ -118,7 +118,7 @@ class GeneralizedRCNN(nn.Module):
             storage.put_image(vis_name, vis_img)
             break  # only visualize one image in a batch
 
-    def forward(self, batched_inputs: List[Dict[str, torch.Tensor]]):
+    def forward(self, inputs):
         """
         Args:
             batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
@@ -141,15 +141,18 @@ class GeneralizedRCNN(nn.Module):
                 The :class:`Instances` object has the following keys:
                 "pred_boxes", "pred_classes", "scores", "pred_masks", "pred_keypoints"
         """
-        if not self.training:
-            return self.inference(batched_inputs)
+        # if not self.training:
+        #     return self.inference(batched_inputs)
+        batched_inputs = inputs['batched_inputs']
+        dino_images = inputs['images']
+        dino_gt_instances = inputs['gt_instances']
+        multiscale_features = inputs['multiscale_features']
 
         images = self.preprocess_image(batched_inputs)
         if "instances" in batched_inputs[0]:
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
         else:
             gt_instances = None
-
         features = self.backbone(images.tensor)
 
         if self.proposal_generator is not None:
@@ -333,3 +336,14 @@ class ProposalNetwork(nn.Module):
             r = detector_postprocess(results_per_image, height, width)
             processed_results.append({"proposals": r})
         return processed_results
+
+def build_region_query_generator(args):
+    cfg = get_cfg()
+    cfg.merge_from_file(args.base_yaml_path)
+    cfg.MODEL.WEIGHTS = args.base_weight_path
+
+    model = GeneralizedRCNN(cfg)
+    if args.base_weight_path:
+        DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
+
+    return model

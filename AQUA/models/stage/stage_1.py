@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import List
 from models.model_utils import load_model, safe_init
 from detectron2.structures import ImageList
-from models.groundingdino.util.misc import nested_tensor_from_tensor_list
+from models.groundingdino.util.misc import nested_tensor_from_tensor_list, NestedTensor
 from models.groundingdino.model.bertwarper import generate_masks_with_special_tokens_and_transfer_map
 from models.groundingdino.util.box_ops import box_xyxy_to_cxcywh
 
@@ -12,28 +13,28 @@ class Stage1(nn.Module):
         self,
         aqua,
         groundingdino,
-        sub_sentence_present=True,
-        max_text_len=256,
-        pixel_mean: List[float] = [123.675, 116.280, 103.530],
-        pixel_std: List[float] = [123.675, 116.280, 103.530],
         device="cuda"
     ):
         super().__init__()
+        # Aqua
         self.aqua = aqua
+
+        # Gdino backbone
         self.text_backbone = groundingdino.bert
         self.image_backbone = groundingdino.backbone
         self.tokenizer = groundingdino.tokenizer
         self.normalizer = groundingdino.normalizer
+        self.input_proj = groundingdino.input_proj
 
-        self.sub_sentence_present = sub_sentence_present
-        self.max_text_len = max_text_len
+        self.num_feature_levels = groundingdino.num_feature_levels
+        self.pixel_mean = groundingdino.pixel_mean
+        self.pixel_std = groundingdino.pixel_std
+        self.max_text_len = groundingdino.max_text_len
+        self.sub_sentence_present = groundingdino.sub_sentence_present
+
         self.device = device
         self.special_tokens = self.tokenizer.convert_tokens_to_ids(["[CLS]", "[SEP]", ".", "?"])
-        self.pixel_mean = pixel_mean
-        self.pixel_std = pixel_std
-
         self.freeze_backbone()
-
 
 
     def forward(self, batched_inputs):
@@ -80,11 +81,41 @@ class Stage1(nn.Module):
         else:
             # import ipdb; ipdb.set_trace()
             tokenized_for_encoder = tokenized
+
+
         with torch.no_grad():
+            self.text_backbone.eval() # Off Dropout
             bert_output = self.text_backbone(**tokenized_for_encoder)
+        with torch.no_grad():
             features, poss = self.image_backbone(samples)
 
-        aqua_output = self.aqua(features)
+            multiscale_features = []
+            masks = []
+            for l, feat in enumerate(features):
+                src, mask = feat.decompose()
+                multiscale_features.append(self.input_proj[l](src))
+                masks.append(mask)
+                assert mask is not None
+            if self.num_feature_levels > len(multiscale_features):
+                _len_srcs = len(multiscale_features)
+                for l in range(_len_srcs, self.num_feature_levels):
+                    if l == _len_srcs:
+                        src = self.input_proj[l](features[-1].tensors)
+                    else:
+                        src = self.input_proj[l](multiscale_features[-1])
+                    m = samples.mask
+                    mask = F.interpolate(m[None].float(), size=src.shape[-2:]).to(torch.bool)[0]
+                    pos_l = self.image_backbone[1](NestedTensor(src, mask)).to(src.dtype)
+                    multiscale_features.append(src)
+                    masks.append(mask)
+                    poss.append(pos_l)
+        aqua_inputs = {
+            'batched_inputs':batched_inputs,
+            'images': images,
+            'multiscale_features': multiscale_features,
+            'gt_instances': gt_instances
+        }
+        aqua_output = self.aqua(aqua_inputs)
 
         return
 
@@ -94,7 +125,9 @@ class Stage1(nn.Module):
         for param in self.image_backbone.parameters():
             param.requires_grad = False
 
+        self.image_backbone.eval()
         self.text_backbone.eval() # off Dropout
+        self.aqua.freeze_backbone()
 
     def preprocess_image(self, batched_inputs):
         images = [self.normalizer(x["image"].to(self.device)) for x in batched_inputs]

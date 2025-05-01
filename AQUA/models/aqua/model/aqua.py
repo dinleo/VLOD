@@ -6,6 +6,7 @@
 """
 import torch
 import torch.nn as nn
+import re
 
 from models.aqua.model.base_model import BaseModel, BertConfigW
 from models.aqua.model.kformer import Kformer
@@ -15,7 +16,7 @@ from models.model_utils import safe_init, load_model
 class AQuA(BaseModel):
     def __init__(
             self,
-            region_query_generator,
+            region_query_generator=None,
             region_size=1408,
             q_size=768,
             kv_size=768,
@@ -53,6 +54,8 @@ class AQuA(BaseModel):
             torch.zeros(1, self.num_kv_token, encoder_config.kv_size)
         )
         kv_token.data.normal_(mean=0.0, std=encoder_config.initializer_range)
+        kformer.missing_keys = self.missing_keys
+        kformer.unexpected_keys = self.unexpected_keys
         return kformer, kv_token
 
     # def init_region_query(self):
@@ -61,6 +64,7 @@ class AQuA(BaseModel):
     def load_from_blip2(self, ckpt_path):
         blip2_state_dict = torch.load(ckpt_path, map_location="cpu")["model"]
         new_state_dict = {}
+        kformer_state_dict = {}
         for k, v in blip2_state_dict.items():
             new_k = k
             if new_k == 'query_tokens':
@@ -85,24 +89,31 @@ class AQuA(BaseModel):
                 if flag:
                     new_k = new_k.replace('Qformer.bert.encoder', 'Kformer.encoder')
             new_state_dict[new_k] = v
-        assert len(new_state_dict) == len(blip2_state_dict)
         missing_keys, unexpected_keys = self.load_state_dict(new_state_dict, strict=False)
+        pattern = re.compile(r"Kformer\.encoder\.layer\.\d+\.crossattention\.self\.(query|value)\.")
 
-        assert missing_keys == self.missing_keys
-        assert unexpected_keys == self.unexpected_keys
+        for m in missing_keys:
+            assert m.startswith('region_query_generator') or pattern.match(m)
 
         return ''
 
-    def forward(self, samples):
-        backbone_features = samples["backbone_features"]
-        multiscale_region_query = self.region_query_generator(backbone_features)
-        multiscale_region_query = self.ln_vision(multiscale_region_query)
-        kv_tokens = self.kv_tokens.expand(multiscale_region_query[0].shape[0], -1, -1)
+    def freeze_backbone(self):
+        for param in self.region_query_generator.parameters():
+            param.requires_grad = False
+        self.region_query_generator.eval()
 
-        outputs = self.Kformer(
-            multiscale_region_query=multiscale_region_query,
-            kv_tokens=kv_tokens
-        )
+    def forward(self, samples):
+        with torch.no_grad():
+            outputs = self.region_query_generator(samples)
+        # backbone_features = samples["backbone_features"]
+        # multiscale_region_query = self.region_query_generator(backbone_features)
+        # multiscale_region_query = self.ln_vision(multiscale_region_query)
+        # kv_tokens = self.kv_tokens.expand(multiscale_region_query[0].shape[0], -1, -1)
+        #
+        # outputs = self.Kformer(
+        #     multiscale_region_query=multiscale_region_query,
+        #     kv_tokens=kv_tokens
+        # )
 
         return outputs
 

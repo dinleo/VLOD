@@ -2,7 +2,7 @@ from omegaconf import OmegaConf
 from detectron2.config import LazyCall as L
 
 from models.stage import build_stage1
-from models.aqua import build_aqua
+from models.aqua import build_aqua, build_region_query_generator
 from models.groundingdino import build_groundingdino, build_backbone, build_transformer
 
 model = OmegaConf.create()
@@ -72,7 +72,11 @@ model.build = L(build_stage1)(args=dict(
     ckpt_path="",
     aqua = L(build_aqua)(args=dict(
         ckpt_path="",
-        blip_ckpt_path = "inputs/ckpt/blip2.pth"
+        blip_ckpt_path = "",
+        region_query_generator=L(build_region_query_generator)(args=dict(
+            base_yaml_path="",
+            base_weight_path="",
+        )),
     )),
     groundingdino = L(build_groundingdino)(args=dict(
         ckpt_path="",
