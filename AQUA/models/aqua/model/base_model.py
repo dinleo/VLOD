@@ -287,7 +287,7 @@ missing_keys = [# Layer 0
     "Kformer.encoder.layer.10.crossattention.self.value.bias",
 
     # region
-    'region_feature.fc.weight', 'region_feature.fc.bias',
+    # 'region_feature.fc.weight', 'region_feature.fc.bias',
 ]
 
 # Param that Don't Use from BLIP2

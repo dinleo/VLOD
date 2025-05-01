@@ -9,8 +9,7 @@ import torch.nn as nn
 
 from models.aqua.model.base_model import BaseModel, BertConfigW
 from models.aqua.model.kformer import Kformer
-from models.aqua.model.region_feature import RegionFeature
-from models.model_utils import safe_init
+from models.model_utils import safe_init, load_model
 
 
 class AQuA(BaseModel):
@@ -38,7 +37,7 @@ class AQuA(BaseModel):
 
         self.temp = nn.Parameter(0.07 * torch.ones([]))
         self.ln_vision = nn.LayerNorm(region_size)
-        self.region_feature = self.init_region_feature()
+        # self.region_feature = self.init_region_feature()
 
     def init_kformer(self):
         encoder_config = BertConfigW()
@@ -54,8 +53,8 @@ class AQuA(BaseModel):
         kv_token.data.normal_(mean=0.0, std=encoder_config.initializer_range)
         return kformer, kv_token
 
-    def init_region_feature(self):
-        return RegionFeature()
+    # def init_region_feature(self):
+    #     return RegionFeature()
 
     def load_from_blip2(self, ckpt_path):
         blip2_state_dict = torch.load(ckpt_path, map_location="cpu")["model"]
@@ -107,7 +106,8 @@ class AQuA(BaseModel):
 
 
 def build_aqua(args):
-    aqua = safe_init(AQuA, args)
-    if args.blip_ckpt:
-        aqua.load_from_blip2(args.blip_ckpt)
-    return aqua
+    model = safe_init(AQuA, args)
+    model = load_model(model, args.ckpt_path)
+    if args.blip_ckpt_path:
+        model.load_from_blip2(args.blip_ckpt_path)
+    return model

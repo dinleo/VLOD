@@ -24,10 +24,10 @@ dataloader.test_sub.dataset.n = eval_sample
 
 
 # modify model
-model.ckpt = ""
-model.build.args.groundingdino.ckpt = "inputs/ckpt/org_b.pth"
-model.build.args.aqua.ckpt = ""
-model.build.args.aqua.build.args.blip_ckpt = "inputs/ckpt/blip2.pth"
+model.build.args.ckpt_path = ""
+model.build.args.aqua.args.ckpt_path = ""
+model.build.args.aqua.args.blip_ckpt_path = "inputs/ckpt/blip2.pth"
+model.build.args.groundingdino.args.ckpt_path = "inputs/ckpt/org_b.pth"
 
 
 # modify runner

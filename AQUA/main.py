@@ -17,7 +17,6 @@ import os
 import sys
 import time
 import torch
-import numpy as np
 from torch.nn.parallel import DataParallel, DistributedDataParallel
 
 from detectron2.config import LazyConfig, instantiate
@@ -38,7 +37,7 @@ from detectron2.utils.events import (
 )
 from detectron2.checkpoint import DetectionCheckpointer
 
-from models.model_utils import WandbWriter, clean_state_dict, check_frozen, load_model
+from models.model_utils import WandbWriter, check_frozen
 from solver.optimizer import ema
 from CFG.cfg_utils import default_setup_detectron2
 
@@ -229,7 +228,7 @@ def do_train(cfg):
         print("CUDA is not available, fall back to CPU.")
 
     # instantiate model
-    model = load_model(cfg.model.build, cfg.model.ckpt)
+    model = instantiate(cfg.model.build)
     model.to(cfg.runner.device)
     # for name, param in model.named_parameters():
     #     if "bert" in name:

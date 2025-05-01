@@ -1,6 +1,6 @@
 from omegaconf import OmegaConf
 from detectron2.config import LazyCall as L
-from models.groundingdino import build_groundingdino
+from models.groundingdino import build_groundingdino, build_backbone, build_transformer
 
 model = OmegaConf.create()
 model.modelname = "groundingdino"
@@ -45,8 +45,6 @@ transformer_args = dict(
     fusion_droppath=0.1,
 )
 gdino_args = dict(
-    backbone_args=backbone_args,
-    transformer_args=transformer_args,
     num_queries=900,
     aux_loss=True,
     iter_update=True,
@@ -68,4 +66,13 @@ gdino_args = dict(
     device="cuda",
 )
 
-model.build = L(build_groundingdino)(args=gdino_args)
+model.build = L(build_groundingdino)(args=dict(
+    ckpt_path="",
+    backbone=L(build_backbone)(
+        args=backbone_args
+    ),
+    transformer=L(build_transformer)(
+        args=transformer_args
+    ),
+    **gdino_args
+    ))

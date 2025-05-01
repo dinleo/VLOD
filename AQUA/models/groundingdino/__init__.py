@@ -5,4 +5,4 @@
 # Licensed under the Apache License, Version 2.0 [see LICENSE for details]
 # ------------------------------------------------------------------------
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-from models.groundingdino.model import build_groundingdino
+from models.groundingdino.model import build_groundingdino, build_backbone, build_transformer

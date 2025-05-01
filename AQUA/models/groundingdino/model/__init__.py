@@ -13,3 +13,5 @@
 # ------------------------------------------------------------------------
 
 from models.groundingdino.model.groundingdino import build_groundingdino
+from models.groundingdino.model.transformer import build_transformer
+from models.groundingdino.model.backbone import build_backbone

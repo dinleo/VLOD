@@ -15,7 +15,7 @@
 # Copyright (c) 2020 SenseTime. All Rights Reserved.
 # ------------------------------------------------------------------------
 import copy
-from typing import List
+from typing import List, Mapping, Any
 
 import torch
 import torch.nn.functional as F
@@ -29,18 +29,16 @@ from ..util.misc import (
     nested_tensor_from_tensor_list,
 )
 
-from .backbone import build_backbone
 from .bertwarper import (
     BertModelWarper,
     generate_masks_with_special_tokens_and_transfer_map,
 )
-from .transformer import build_transformer
 from .utils import MLP, ContrastiveEmbed
 
 from detectron2.modeling import detector_postprocess
 from detectron2.structures import ImageList
 from .post_coco import PostProcessCoco
-from ...model_utils import safe_init
+from models.model_utils import safe_init, load_model
 
 
 class GroundingDINO(nn.Module):
@@ -436,9 +434,7 @@ def recover_to_cls_logits(logits, cate_to_token_mask_list, for_fill=float("-inf"
 
 
 def build_groundingdino(args):
-    args.backbone = build_backbone(args.backbone_args)
-    args.transformer = build_transformer(args.transformer_args)
-
     model = safe_init(GroundingDINO, args)
+    model = load_model(model, args.ckpt_path)
 
     return model

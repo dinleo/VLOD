@@ -80,9 +80,11 @@ class Stage1(nn.Module):
         else:
             # import ipdb; ipdb.set_trace()
             tokenized_for_encoder = tokenized
+        with torch.no_grad():
+            bert_output = self.text_backbone(**tokenized_for_encoder)
+            features, poss = self.image_backbone(samples)
 
-        bert_output = self.text_backbone(**tokenized_for_encoder)
-        features, poss = self.image_backbone(samples)
+        aqua_output = self.aqua(features)
 
         return
 
@@ -91,6 +93,8 @@ class Stage1(nn.Module):
             param.requires_grad = False
         for param in self.image_backbone.parameters():
             param.requires_grad = False
+
+        self.text_backbone.eval() # off Dropout
 
     def preprocess_image(self, batched_inputs):
         images = [self.normalizer(x["image"].to(self.device)) for x in batched_inputs]
@@ -120,9 +124,7 @@ class Stage1(nn.Module):
 
 
 def build_stage1(args):
-    args.aqua = load_model(args.aqua.build, args.aqua.ckpt)
-    args.groundingdino = load_model(args.groundingdino.build, args.groundingdino.ckpt)
-
     model = safe_init(Stage1, args)
+    model = load_model(model, args.ckpt_path)
 
     return model

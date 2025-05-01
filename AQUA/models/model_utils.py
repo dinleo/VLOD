@@ -16,8 +16,9 @@ import torch
 from PIL import Image
 from collections import OrderedDict
 from detectron2.utils.events import EventWriter, get_event_storage
-from detectron2.config import instantiate
+from detectron2.config import LazyCall, instantiate
 import inspect
+from omegaconf import DictConfig
 
 class WandbWriter(EventWriter):
     """
@@ -78,11 +79,10 @@ def clean_state_dict(state_dict):
     return new_state_dict
 
 
-def load_model(build, ckpt):
-    model = instantiate(build)
-    if ckpt:
-        checkpoint = torch.load(ckpt, map_location="cpu")
-        missing, unexpected = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
+def load_model(model, ckpt_path, strict=False):
+    if ckpt_path:
+        checkpoint = torch.load(ckpt_path, map_location="cpu")
+        missing, unexpected = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=strict)
 
     return model
 
@@ -91,7 +91,12 @@ def safe_init(cls, args: dict):
     sig = inspect.signature(cls.__init__)
     valid_keys = sig.parameters.keys() - {'self'}
 
-    filtered_args = {k: v for k, v in args.items() if k in valid_keys}
+    filtered_args = {}
+    for k, v in args.items():
+        if k in valid_keys:
+            if isinstance(v, (LazyCall, DictConfig)) and '_target_' in v:
+                v = instantiate(v)
+            filtered_args[k] = v
 
     missing_keys = valid_keys - filtered_args.keys()
     if missing_keys:

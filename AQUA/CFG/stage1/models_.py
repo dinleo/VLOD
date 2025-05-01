@@ -3,11 +3,10 @@ from detectron2.config import LazyCall as L
 
 from models.stage import build_stage1
 from models.aqua import build_aqua
-from models.groundingdino import build_groundingdino
+from models.groundingdino import build_groundingdino, build_backbone, build_transformer
 
 model = OmegaConf.create()
 model.modelname = "stage1"
-model.ckpt = ""
 
 backbone_args = dict(
     backbone="swin_B_384_22k",
@@ -48,8 +47,6 @@ transformer_args = dict(
     fusion_droppath=0.1,
 )
 gdino_args = dict(
-    backbone_args=backbone_args,
-    transformer_args=transformer_args,
     num_queries=900,
     aux_loss=True,
     iter_update=True,
@@ -71,17 +68,20 @@ gdino_args = dict(
     device="cuda",
 )
 
-model.build = L(build_stage1)(
-    args= dict(
-        aqua = dict(
-            build = L(build_aqua)(args = dict(blip_ckpt = "inputs/ckpt/blip2.pth",)),
-            ckpt = "",
+model.build = L(build_stage1)(args=dict(
+    ckpt_path="",
+    aqua = L(build_aqua)(args=dict(
+        ckpt_path="",
+        blip_ckpt_path = "inputs/ckpt/blip2.pth"
+    )),
+    groundingdino = L(build_groundingdino)(args=dict(
+        ckpt_path="",
+        backbone=L(build_backbone)(
+            args=backbone_args
         ),
-        groundingdino = dict(
-            build = L(build_groundingdino)(
-                args = gdino_args
-            ),
-            ckpt = "inputs/ckpt/org_b.pth",
+        transformer=L(build_transformer)(
+            args=transformer_args
         ),
-    ),
-)
+        **gdino_args
+    ))
+))

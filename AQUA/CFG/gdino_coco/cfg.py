@@ -24,7 +24,7 @@ dataloader.test_sub.dataset.n = eval_sample
 
 
 # modify model
-model.ckpt = "inputs/ckpt/org_b.pth"
+model.build.args.ckpt = "inputs/ckpt/org_b.pth"
 
 
 # modify runner
