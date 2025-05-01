@@ -15,6 +15,7 @@ from models.model_utils import safe_init, load_model
 class AQuA(BaseModel):
     def __init__(
             self,
+            region_query_generator,
             region_size=1408,
             q_size=768,
             kv_size=768,
@@ -23,6 +24,7 @@ class AQuA(BaseModel):
         super().__init__()
 
         # Project vision feature to hidden_size
+        self.region_query_generator = region_query_generator
         self.region_size = region_size
         self.q_size = q_size
         self.kv_size = kv_size
@@ -37,7 +39,7 @@ class AQuA(BaseModel):
 
         self.temp = nn.Parameter(0.07 * torch.ones([]))
         self.ln_vision = nn.LayerNorm(region_size)
-        # self.region_feature = self.init_region_feature()
+        # self.region_query = self.init_region_query()
 
     def init_kformer(self):
         encoder_config = BertConfigW()
@@ -53,7 +55,7 @@ class AQuA(BaseModel):
         kv_token.data.normal_(mean=0.0, std=encoder_config.initializer_range)
         return kformer, kv_token
 
-    # def init_region_feature(self):
+    # def init_region_query(self):
     #     return RegionFeature()
 
     def load_from_blip2(self, ckpt_path):
@@ -93,13 +95,13 @@ class AQuA(BaseModel):
 
     def forward(self, samples):
         backbone_features = samples["backbone_features"]
-        multiscale_region_feature = self.rpn(backbone_features)
-        multiscale_region_feature = self.ln_vision(multiscale_region_feature)
-        kv_tokens = self.kv_tokens.expand(multiscale_region_feature[0].shape[0], -1, -1)
+        multiscale_region_query = self.region_query_generator(backbone_features)
+        multiscale_region_query = self.ln_vision(multiscale_region_query)
+        kv_tokens = self.kv_tokens.expand(multiscale_region_query[0].shape[0], -1, -1)
 
         outputs = self.Kformer(
-            multiscale_region_feature=multiscale_region_feature,
-            kv_feature=kv_tokens
+            multiscale_region_query=multiscale_region_query,
+            kv_tokens=kv_tokens
         )
 
         return outputs
