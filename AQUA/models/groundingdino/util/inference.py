@@ -7,7 +7,7 @@ import torch
 from PIL import Image
 from torchvision.ops import box_convert
 
-from .. import get_model
+# from .. import get_model
 from ..model import groundingdino as T
 from ..util.misc import clean_state_dict
 from ..util.slconfig import SLConfig
@@ -21,14 +21,14 @@ def preprocess_caption(caption: str) -> str:
     return result + "."
 
 
-def load_model(model_config_path: str, model_checkpoint_path: str):
-    args = SLConfig.fromfile(model_config_path)
-    args.device = "cuda"
-    model = get_model(args)
-    checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
-    model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
-    model.eval()
-    return model
+# def load_model(model_config_path: str, model_checkpoint_path: str):
+#     args = SLConfig.fromfile(model_config_path)
+#     args.device = "cuda"
+#     model = get_model(args)
+#     checkpoint = torch.load(model_checkpoint_path, map_location="cpu")
+#     model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
+#     model.eval()
+#     return model
 
 
 def load_image(image_path: str) -> Tuple[np.array, torch.Tensor]:

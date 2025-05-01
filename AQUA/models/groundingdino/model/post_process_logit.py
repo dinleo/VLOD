@@ -2,48 +2,123 @@ import torch
 from detectron2.structures import Boxes, Instances
 from ..util.box_ops import box_cxcywh_to_xyxy
 
-class PostProcessCoco(torch.nn.Module):
-    """ This module converts the model's output's (256 token logit) into (91 class sigmoid) for COCO evaluation"""
+class PostProcessLogit(torch.nn.Module):
+    """
+    This module converts the model's output's (256 token logit) into (num of classes in prompt logit)
+    ex: captions = "person . dog . cat ." [B, Q, 256] -> [B, Q, 3]
+    """
 
-    def __init__(self, tokenlizer=None, num_coco_cls=80, max_text_len=256, topk_num=300) -> None:
+    def __init__(self, tokenlizer=None, num_coco_cls=80, max_token_len=256, topk_num=300) -> None:
         super().__init__()
         self.tokenlizer = tokenlizer
         self.num_coco_cls = num_coco_cls
-        self.max_text_len = max_text_len
+        self.max_token_len = max_token_len
         self.topk_num = topk_num
-        self.pos_map_hub = {}
+        self.prompt_map_hub = {}
+        self.coco_map_hub = {}
 
-    def forward(self, inputs, outputs):
+    def forward(self, captions, outputs, mapping=None):
         """
-        Change token logit to 91 class logit(sigmoid) for COCO evaluation.
+        Change token logit to class logit.
         Args:
-            inputs: list of data with key "captions" each like "person . dog . cat ."
+            captions: list of "captions" each like "person . dog . cat ."
             outputs: dict with key "pred_logits" of shape [B, Q, T]
-
+            mapping: if set "coco", map class logit to COCO's EVAL class logit.
         Returns:
             logits_cls: Tensor of shape [B, Q, C]
         """
-        logit = outputs["pred_logits"]  # [B, Q, T]
+        logit = outputs["pred_logits"]
+        logit[torch.isinf(logit)] = -20 # [B, Q, T]
         device = logit.device
         pos_maps = []
 
-        for i in inputs:
-            caption = i["captions"]
-            pos_map = self.get_pos_map(caption)
+        for caption in captions:
+            pos_map = self.get_token2prompt_map(caption)
             pos_maps.append(pos_map)
 
-
         pos_maps = torch.stack(pos_maps, dim=0).to(device)  # [B, C, T]
-        logit[torch.isinf(logit)] = 0
-        # (B, Query, Token) @ (B, Class, Token).T -> (B, Q, C)
-        class_logit = logit @ pos_maps.transpose(1, 2)
+        # (B, Query, Token) @ (B, Token, Class) -> (B, Q, C)
+        class_logit = logit @ pos_maps
+        if mapping == 'coco':
+            pos_maps = []
+            for caption in captions:
+                pos_map = self.get_prompt2coco_map(caption)
+                pos_maps.append(pos_map)
 
-        pos_map_mask = pos_maps.sum(dim=2)
-        pos_map_mask = (pos_map_mask == 0).unsqueeze(1)
-        class_logit = class_logit.masked_fill(pos_map_mask, float('-inf'))
+            pos_maps = torch.stack(pos_maps, dim=0).to(device)
+            # (B, Q, C) -> (B, Q, 80)
+            class_logit = class_logit @ pos_maps
+
+        pos_map_mask = pos_maps.sum(dim=1)
+        pos_map_mask = (pos_map_mask == 0)
+        class_logit = class_logit.masked_fill(pos_map_mask.unsqueeze(1), float('-inf'))
 
         outputs["pred_logits"] = class_logit
         return outputs
+
+    def get_token2prompt_map(self, caption):
+        """
+        Create a [Token, C_prompt] tensor that maps each Token → C_prompt category index.
+        Args:
+            caption (str): raw caption string (e.g., "bear . zebra . giraffe .")
+        Returns:
+            Tensor: token_to_class_map [T, C_prompt]
+        """
+        if self.prompt_map_hub.get(caption, None) is not None:
+            return self.prompt_map_hub[caption]
+
+        tokenized = self.tokenlizer(caption, return_offsets_mapping=True, padding="longest", max_length=self.max_token_len)
+        offsets = tokenized["offset_mapping"]
+        if isinstance(offsets, torch.Tensor):
+            offsets = offsets.tolist()
+
+        cat_names = [c.strip() for c in caption.strip(" .").split(".") if c.strip()]
+        positive_map = torch.zeros((len(cat_names), self.max_token_len), dtype=torch.float)
+
+        curr_char_pos = 0
+        for i, cat in enumerate(cat_names):
+            try:
+                cat_start = caption.index(cat, curr_char_pos)
+                cat_end = cat_start + len(cat)
+            except ValueError:
+                continue
+
+            for j, (start, end) in enumerate(offsets):
+                if start is None or end is None:
+                    continue
+                if end <= cat_start:
+                    continue
+                if start >= cat_end:
+                    break
+                positive_map[i, j] = 1.0
+
+            curr_char_pos = cat_end
+
+        class_token_map = positive_map / (positive_map.sum(-1)[:, None] + 1e-6) # [Class# in prompt, T]
+        class_token_map = class_token_map.transpose(0, 1)
+        self.prompt_map_hub[caption] = class_token_map
+        return class_token_map
+
+    def get_prompt2coco_map(self, caption):
+        """
+        Create a [C_prompt, 80] tensor that maps each prompt class → COCO category index.
+        Returns:
+            Tensor of shape [C_prompt, 80]
+        """
+        if caption in self.coco_map_hub:
+            return self.coco_map_hub[caption]
+
+        cat_names = [c.strip() for c in caption.strip(" .").split(".") if c.strip()]
+        num_prompt = len(cat_names)
+        class_coco_map = torch.zeros(num_prompt, self.num_coco_cls, dtype=torch.float)
+
+        for i, name in enumerate(cat_names):
+            coco_id = cat2id.get(name, -1)
+            if 0 <= coco_id < self.num_coco_cls:
+                class_coco_map[i, coco_id] = 1.0
+
+        self.coco_map_hub[caption] = class_coco_map
+        return class_coco_map
 
     def select_topk(self, outputs, image_sizes):
         """
@@ -87,55 +162,6 @@ class PostProcessCoco(torch.nn.Module):
             result.pred_classes = labels_per_image
             results.append(result)
         return results
-
-    def get_pos_map(self, caption):
-        """
-        Create a positive map [C, T] for token-level alignment to category names.
-
-        Args:
-            tokenized: tokenizer output from `tokenizer(caption, return_offsets_mapping=True, ...)`
-            caption (str): raw caption string (e.g., "bear . zebra . giraffe .")
-        Returns:
-            Tensor: positive_map [C, max_text_len]
-        """
-        if self.pos_map_hub.get(caption, None) is not None:
-            return self.pos_map_hub[caption]
-
-        tokenized = self.tokenlizer(caption, return_offsets_mapping=True, padding="longest", max_length=256)
-        offsets = tokenized["offset_mapping"]
-        if isinstance(offsets, torch.Tensor):
-            offsets = offsets.tolist()
-
-        cat_names = [c.strip() for c in caption.strip(" .").split(".") if c.strip()]
-        positive_map = torch.zeros((len(cat_names), self.max_text_len), dtype=torch.float)
-
-        curr_char_pos = 0
-        for i, cat in enumerate(cat_names):
-            try:
-                cat_start = caption.index(cat, curr_char_pos)
-                cat_end = cat_start + len(cat)
-            except ValueError:
-                continue
-
-            for j, (start, end) in enumerate(offsets):
-                if start is None or end is None:
-                    continue
-                if end <= cat_start:
-                    continue
-                if start >= cat_end:
-                    break
-                positive_map[i, j] = 1.0
-
-            curr_char_pos = cat_end
-
-        class_token_map = positive_map / (positive_map.sum(-1)[:, None] + 1e-6) # [Class# in prompt, T]
-        coco_token_map = torch.zeros((self.num_coco_cls, self.max_text_len))  # [Class# in coco_val, T]
-        for i, cat in enumerate(cat_names):
-            coco_id = cat2id[cat]
-            coco_token_map[coco_id] = class_token_map[i]
-
-        self.pos_map_hub[caption] = coco_token_map
-        return coco_token_map
 
 
 cat2id = {

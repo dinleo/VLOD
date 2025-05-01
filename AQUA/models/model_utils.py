@@ -83,7 +83,7 @@ def load_model(model, ckpt_path, strict=False):
     if ckpt_path:
         checkpoint = torch.load(ckpt_path, map_location="cpu")
         missing, unexpected = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=strict)
-
+        print(f"Use checkpoint {ckpt_path}")
     return model
 
 

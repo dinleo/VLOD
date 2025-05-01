@@ -37,7 +37,7 @@ from .utils import MLP, ContrastiveEmbed
 
 from detectron2.modeling import detector_postprocess
 from detectron2.structures import ImageList
-from .post_coco import PostProcessCoco
+from .post_process_logit import PostProcessLogit
 from models.model_utils import safe_init, load_model
 
 
@@ -203,7 +203,7 @@ class GroundingDINO(nn.Module):
         self.pixel_std = pixel_std
 
         # coco
-        self.post_coco = PostProcessCoco(self.tokenizer)
+        self.post_logit = PostProcessLogit(self.tokenizer)
 
     def _reset_parameters(self):
         # init input_proj
@@ -236,6 +236,7 @@ class GroundingDINO(nn.Module):
         samples = nested_tensor_from_tensor_list(images)
 
         captions = [x["captions"] for x in batched_inputs]
+        # captions = ['person . motorcycle . person . airplane']
         names_list = [x["captions"][:-1].split(".") for x in batched_inputs]
 
         # encoder texts
@@ -369,11 +370,11 @@ class GroundingDINO(nn.Module):
         # if unset_image_tensor:
         #     self.unset_image_tensor() ## If necessary
 
-        # for coco output
-        out = self.post_coco(batched_inputs, out)
+        # change token logits to class logits
+        out = self.post_logit(captions, out, "coco")
 
         if not self.training:
-            results = self.post_coco.select_topk(out, images.image_sizes)
+            results = self.post_logit.select_topk(out, images.image_sizes)
             processed_results = []
             for results_per_image, input_per_image, image_size in zip(
                     results, batched_inputs, images.image_sizes
@@ -385,6 +386,24 @@ class GroundingDINO(nn.Module):
             return processed_results
 
         return out
+
+    def visualize(self, outputs, caption, box_threshold=0.3, text_threshold=0.2):
+        prediction_logits = outputs["pred_logits"].cpu().sigmoid()[0]  # prediction_logits.shape = (nq, 256)
+        prediction_boxes = outputs["pred_boxes"].cpu()[0]  # prediction_boxes.shape = (nq, 4)
+
+        mask = prediction_logits.max(dim=1)[0] > box_threshold
+        logits = prediction_logits[mask]  # logits.shape = (n, 256)
+        boxes = prediction_boxes[mask]  # boxes.shape = (n, 4)
+
+        tokenized = self.tokenlizer(caption)
+
+        phrases = [
+            get_phrases_from_posmap(logit > text_threshold, tokenized, caption).replace('.', '')
+            for logit
+            in logits
+        ]
+
+        return boxes, logits.max(dim=1)[0], phrases
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):
