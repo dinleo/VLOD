@@ -20,19 +20,20 @@ class Stage1(nn.Module):
         self.aqua = aqua
 
         # Gdino backbone
-        self.text_backbone = groundingdino.bert
-        self.image_backbone = groundingdino.backbone
-        self.tokenizer = groundingdino.tokenizer
-        self.normalizer = groundingdino.normalizer
-        self.input_proj = groundingdino.input_proj
-
-        self.num_feature_levels = groundingdino.num_feature_levels
-        self.pixel_mean = groundingdino.pixel_mean
-        self.pixel_std = groundingdino.pixel_std
-        self.max_text_len = groundingdino.max_text_len
-        self.sub_sentence_present = groundingdino.sub_sentence_present
+        # self.text_backbone = groundingdino.bert
+        # self.image_backbone = groundingdino.backbone
+        # self.tokenizer = groundingdino.tokenizer
+        # self.normalizer = groundingdino.normalizer
+        # self.input_proj = groundingdino.input_proj
+        #
+        # self.num_feature_levels = groundingdino.num_feature_levels
+        # self.pixel_mean = groundingdino.pixel_mean
+        # self.pixel_std = groundingdino.pixel_std
+        # self.max_text_len = groundingdino.max_text_len
+        # self.sub_sentence_present = groundingdino.sub_sentence_present
 
         self.device = device
+        self.groundingdino = groundingdino
         self.special_tokens = self.tokenizer.convert_tokens_to_ids(["[CLS]", "[SEP]", ".", "?"])
         self.freeze_backbone()
 

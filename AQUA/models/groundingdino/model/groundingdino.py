@@ -70,7 +70,8 @@ class GroundingDINO(nn.Module):
         max_text_len=256,
         pixel_mean: List[float] = [123.675, 116.280, 103.530],
         pixel_std: List[float] = [123.675, 116.280, 103.530],
-        device="cuda"
+        device="cuda",
+        mode="coco"
     ):
         """Initializes the model.
         Parameters:
@@ -82,6 +83,7 @@ class GroundingDINO(nn.Module):
         """
         super().__init__()
         self.device = device
+        self.mode = mode
         self.num_queries = num_queries
         self.transformer = transformer
         self.hidden_dim = hidden_dim = transformer.d_model
@@ -237,7 +239,7 @@ class GroundingDINO(nn.Module):
         samples = nested_tensor_from_tensor_list(images)
 
         captions = [x["captions"] for x in batched_inputs]
-        # captions = [' ']
+        # captions = ['object .']
         names_list = [x["captions"][:-1].split(".") for x in batched_inputs]
 
         # encoder texts
@@ -372,8 +374,10 @@ class GroundingDINO(nn.Module):
         #     self.unset_image_tensor() ## If necessary
 
         # change token logits to class logits
-        out = self.post_logit(captions, out, None)
-        # visualize(out["pred_logits"][0], out["pred_boxes"][0], captions[0], batched_inputs[0]['image'])
+        out = self.post_logit(captions, out, self.mode)
+        if self.mode == "stage1":
+            out["hs"] = hs
+        # visualize(out["pred_logits"][0], out["pred_boxes"][0], captions[0], batched_inputs[0]['image'], threshold=0.05)
 
         if not self.training:
             results = self.post_logit.select_topk(out, images.image_sizes)
