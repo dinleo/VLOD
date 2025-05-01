@@ -20,6 +20,12 @@ from detectron2.config import LazyCall, instantiate
 import inspect
 from omegaconf import DictConfig
 
+import cv2
+import numpy as np
+import supervision as sv
+from torchvision.ops import box_convert
+
+
 class WandbWriter(EventWriter):
     """
     Write all scalars to a wandb file.
@@ -160,3 +166,63 @@ def print_tree(tree, depth=0, max_depth=1, prefix=""):
             else:
                 extension = "│   "
             print_tree(node['children'], depth=depth+1, max_depth=max_depth, prefix=prefix + extension)
+
+def visualize(pred_logit, pred_boxes, caption, image, threshold=0.1):
+    """
+    Args:
+        pred_logit: (N, C_prompt) logits before sigmoid
+        pred_boxes: (N, 4) boxes in cxcywh format, normalized (0~1)
+        caption: prompt string (e.g. "dog . cat . zebra .")
+        image: torch Tensor [3, H, W], pixel image
+    """
+
+    # 1. Prepare
+    cat_names = [c.strip() for c in caption.strip(" .").split(".") if c.strip()]
+    image = image.permute(1, 2, 0).cpu().numpy()  # [H, W, 3]
+    h, w, _ = image.shape
+
+    # 2. Process predictions
+    pred_logit = pred_logit.sigmoid().detach().cpu()  # [N, C]
+    pred_boxes = pred_boxes.detach().cpu()            # [N, 4], cxcywh (0~1)
+    scores = pred_logit.max(dim=1).values    # [N]
+
+    # 3. Filter by confidence
+    mask = scores > threshold
+    pred_logit = pred_logit[mask]        # [M, C]
+    pred_boxes = pred_boxes[mask]        # [M, 4]
+    scores = scores[mask]                # [M]
+
+    # 4. Class index
+    pred_class = pred_logit.argmax(dim=1).numpy()
+
+    if pred_boxes.shape[0] == 0:
+        print("No boxes passed threshold.")
+        return image  # return unchanged
+
+    # 5. Box conversion and scaling
+    pred_boxes = box_convert(pred_boxes, in_fmt="cxcywh", out_fmt="xyxy")  # [M, 4]
+    pred_boxes *= torch.tensor([w, h, w, h])  # scale to absolute coords
+    pred_boxes = pred_boxes.numpy()
+
+    # 6. Prepare visualization
+    phrases = [cat_names[c] for c in pred_class]
+    detections = sv.Detections(xyxy=pred_boxes)
+
+    labels = [
+        f"{phrase} {score:.2f}"
+        for phrase, score in zip(phrases, scores.numpy())
+    ]
+
+    box_annotator = sv.BoxAnnotator()
+    annotated = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    annotated = box_annotator.annotate(scene=annotated, detections=detections, labels=labels)
+
+    print(f"predict {len(pred_class)} instances")
+    cv2.imwrite("outputs/result.jpg", annotated)
+    # cv2.imshow("Prediction", annotated)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    return annotated
+
+
+
