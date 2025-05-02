@@ -53,9 +53,8 @@ def find_top_rpn_proposals(
             comment.
 
     Returns:
-        list[Instances]: list of N Instances. The i-th Instances
-            stores post_nms_topk object proposals for image i, sorted by their
-            objectness score in descending order.
+        nms_boxes (Batch, K, 4)
+        nms_scores (Batch, K)
     """
     num_images = len(image_sizes)
     device = (
@@ -96,7 +95,9 @@ def find_top_rpn_proposals(
     level_ids = cat(level_ids, dim=0)
 
     # 3. For each image, run a per-level NMS, and choose topk results.
-    results: List[Instances] = []
+
+    nms_boxes = []
+    nms_prob = []
     for n, image_size in enumerate(image_sizes):
         boxes = Boxes(topk_proposals[n])
         scores_per_img = topk_scores[n]
@@ -127,11 +128,13 @@ def find_top_rpn_proposals(
         # and the configuration "POST_NMS_TOPK_TRAIN" end up relying on the batch size.
         # This bug is addressed in Detectron2 to make the behavior independent of batch size.
         keep = keep[:post_nms_topk]  # keep is already sorted
+        nms_boxes.append(boxes[keep].tensor)
+        nms_prob.append(scores_per_img[keep])
 
-        res = Instances(image_size)
-        res.proposal_boxes = boxes[keep]
-        res.objectness_logits = scores_per_img[keep]
-        results.append(res)
+    results = {
+        'nms_boxes': torch.stack(nms_boxes),
+        'nms_prob': torch.stack(nms_prob),
+    }
     return results
 
 

@@ -11,6 +11,7 @@ import re
 from models.aqua.model.base_model import BaseModel, BertConfigW
 from models.aqua.model.kformer import Kformer
 from models.model_utils import safe_init, load_model
+from models.model_utils import visualize
 
 
 class AQuA(BaseModel):
@@ -99,9 +100,12 @@ class AQuA(BaseModel):
             param.requires_grad = False
         self.region_query_generator.eval()
 
-    def forward(self, samples):
+    def forward(self, dict_inputs):
         with torch.no_grad():
-            outputs = self.region_query_generator(samples)
+            outputs = self.region_query_generator(dict_inputs)
+            nms_boxes = outputs['nms_boxes']
+            nms_prob = outputs['nms_prob']
+        visualize(nms_prob[0], nms_boxes[0], 'object .', dict_inputs['images'][0], threshold=0, is_cxcy=False, is_logit=False)
         # backbone_features = samples["backbone_features"]
         # multiscale_region_query = self.region_query_generator(backbone_features)
         # multiscale_region_query = self.ln_vision(multiscale_region_query)

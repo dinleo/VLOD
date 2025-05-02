@@ -27,7 +27,7 @@ dataloader.test_sub.dataset.n = eval_sample
 model.build.args.ckpt_path = ""
 model.build.args.aqua.args.ckpt_path = ""
 model.build.args.aqua.args.blip_ckpt_path = "inputs/ckpt/blip2.pth"
-model.build.args.backbone.args.ckpt_path = "inputs/ckpt/org_b.pth"
+model.build.args.detr_backbone.args.ckpt_path = "inputs/ckpt/org_b.pth"
 # model.build.args.aqua.args.region_query_generator.args.rpn_yaml_path \
 #     = f"CFG/{project_name}/faster_rcnn_R_50_FPN_3x.yaml"
 

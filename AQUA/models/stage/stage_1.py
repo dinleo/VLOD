@@ -12,47 +12,65 @@ class Stage1(nn.Module):
     def __init__(
         self,
         aqua,
-        backbone,
+        detr_backbone=None,
+        image_backbone=None,
+        text_backbone=None,
         device="cuda"
     ):
         super().__init__()
         self.device = device
 
         self.aqua = aqua
-        self.backbone = backbone
-        self.backbone.mode = "stage1"
+        self.detr_backbone = detr_backbone
+        if self.detr_backbone:
+            self.detr_mode = True
+            self.detr_backbone.mode = "stage1"
+        else:
+            self.detr_mode = False
+            self.image_backbone = image_backbone
+            self.text_backbone = text_backbone
         self.freeze_backbone()
-        # TODO: image, text backbone seperated mode
 
 
     def forward(self, batched_inputs):
         # process images
+        images = [i['image'] for i in batched_inputs]
+        gt_instances = [i['instances']for i in batched_inputs]
+        aqua_input = {
+            'images': images,
+            'gt_instances': gt_instances,
+            'image_features': None,
+            'text_features': None,
+        }
         with torch.no_grad():
-            self.backbone.eval()
-            backbone_outputs = self.backbone(batched_inputs)
-        image_sizes = [i['instances'].image_size for i in batched_inputs]
+            if self.detr_mode:
+                self.detr_backbone.eval()
+                detr_outputs = self.detr_backbone(batched_inputs)
+                aqua_input['pred_logits'] = [detr_outputs['pred_logits']]
+                aqua_input['pred_boxes'] = [detr_outputs['pred_boxes']]
+                aqua_input['multiscale_region_features'] = detr_outputs['hs']
+            else:
+                aqua_input['image_features'] = self.image_backbone(batched_inputs)
+                aqua_input['text_features'] = self.text_backbone(batched_inputs)
 
-        if 'pred_logits' in backbone_outputs:
-            # if backbone is groundingdino, Aqua don't need rpn
-            aqua_input = {
-                'pred_logits': backbone_outputs['pred_logits'],
-                'pred_boxes': backbone_outputs['pred_boxes'],
-                'backbone_features': backbone_outputs['hs'],
-                'image_sizes' : image_sizes,
-            }
-        else:
-            aqua_input = {
-                'backbone_features': backbone_outputs,
-                'image_sizes': image_sizes,
-            }
         aqua_output = self.aqua(aqua_input)
 
-        return
+        return aqua_output
 
     def freeze_backbone(self):
-        for param in self.backbone.parameters():
-            param.requires_grad = False
-        self.backbone.eval()
+        if self.detr_mode:
+            for param in self.detr_backbone.parameters():
+                param.requires_grad = False
+            self.detr_backbone.eval()
+        else:
+            for param in self.image_backbone.parameters():
+                param.requires_grad = False
+            self.image_backbone.eval()
+
+            for param in self.text_backbone.parameters():
+                param.requires_grad = False
+            self.text_backbone.eval()
+
         self.aqua.freeze_backbone()
 
     def preprocess_image(self, batched_inputs):

@@ -78,7 +78,7 @@ model.build = L(build_stage1)(args=dict(
             rpn_yaml_path="",
         )),
     )),
-    backbone = L(build_groundingdino)(args=dict(
+    detr_backbone = L(build_groundingdino)(args=dict(
         ckpt_path="",
         backbone=L(build_backbone)(
             args=backbone_args

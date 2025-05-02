@@ -168,7 +168,7 @@ def print_tree(tree, depth=0, max_depth=1, prefix=""):
                 extension = "│   "
             print_tree(node['children'], depth=depth+1, max_depth=max_depth, prefix=prefix + extension)
 
-def visualize(pred_logit, pred_boxes, caption, image, threshold=0.1):
+def visualize(pred_logit, pred_boxes, caption, image, threshold=0.1, is_norm=True, is_logit=True, is_cxcy=True):
     """
     Args:
         pred_logit: (N, C_prompt) logits before sigmoid
@@ -183,7 +183,11 @@ def visualize(pred_logit, pred_boxes, caption, image, threshold=0.1):
     h, w, _ = image.shape
 
     # 2. Process predictions
-    pred_logit = pred_logit.sigmoid().detach().cpu()  # [N, C]
+    if is_logit:
+        pred_logit=pred_logit.sigmoid()
+    if pred_logit.dim() == 1:
+        pred_logit.unsqueeze_(1)
+    pred_logit = pred_logit.detach().cpu()  # [N, C]
     pred_boxes = pred_boxes.detach().cpu()            # [N, 4], cxcywh (0~1)
     scores = pred_logit.max(dim=1).values    # [N]
 
@@ -201,8 +205,10 @@ def visualize(pred_logit, pred_boxes, caption, image, threshold=0.1):
         return image  # return unchanged
 
     # 5. Box conversion and scaling
-    pred_boxes = box_convert(pred_boxes, in_fmt="cxcywh", out_fmt="xyxy")  # [M, 4]
-    pred_boxes *= torch.tensor([w, h, w, h])  # scale to absolute coords
+    if is_cxcy:
+        pred_boxes = box_convert(pred_boxes, in_fmt="cxcywh", out_fmt="xyxy")  # [M, 4]
+    if is_norm:
+        pred_boxes *= torch.tensor([w, h, w, h])  # scale to absolute coords
     pred_boxes = pred_boxes.numpy()
 
     # 6. Prepare visualization

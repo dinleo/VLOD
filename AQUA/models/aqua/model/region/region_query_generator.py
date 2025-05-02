@@ -8,7 +8,7 @@ from torch import nn
 from detectron2.config import configurable
 from detectron2.data.detection_utils import convert_image_to_rgb
 from detectron2.layers import move_device_like
-from detectron2.structures import ImageList, Instances
+from detectron2.structures import ImageList, Instances, Boxes
 from detectron2.utils.events import get_event_storage
 from detectron2.utils.logger import log_first_n
 
@@ -29,8 +29,8 @@ class RegionQueryGenerator(nn.Module):
         self,
         rpn_yaml_path,
         nms_thresh: float=0.05,
-        pre_nms_topk: int=1,
-        post_nms_topk: int=32,
+        pre_nms_topk: int=256,
+        post_nms_topk: int=256,
         min_box_size: float=10,
     ):
         """
@@ -60,24 +60,45 @@ class RegionQueryGenerator(nn.Module):
                 DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
             self.rpn = model
 
-    def forward(self, batched_inputs):
-        image_sizes = batched_inputs['image_sizes']
-        backbone_features = batched_inputs['backbone_features']
+    def forward(self, dict_inputs):
+        gt_instances = dict_inputs['gt_instances']
+        image_sizes = [i.image_size for i in gt_instances]
+        gt_boxes = [i.gt_boxes for i in gt_instances]
+        gt_classes = [i.gt_classes for i in gt_instances]
 
-        if self.rpn and backbone_features:
-            output = self.rpn(backbone_features)
+        if self.rpn:
+            # image_features -> [Scale, Batch, (Boxes, Logit)]
+            rpn_output = self.rpn(dict_inputs['image_features'])
         else:
-            output = batched_inputs
+            rpn_output = dict_inputs
 
-        pred_objectness = [output['pred_logits'].sigmoid()]
-        proposal = []
-        for i, p in enumerate(output['pred_boxes']):
-            image_size = image_sizes[i]
-            xyxy = box_cxcywh_to_xyxy(p)
-            xyxy.scale(scale_x=image_size[1], scale_y=image_size[0])
-            proposal.append(xyxy)
+        pred_boxes = rpn_output['pred_boxes']
+        pred_logits = rpn_output['pred_logits']
 
-        output = find_top_rpn_proposals(proposal, pred_objectness, image_sizes, self.nms_thresh, self.pre_nms_topk, self.post_nms_topk, self.min_box_size, training=False)
+        multiscale_proposal = []
+        scales = torch.tensor(image_sizes, device=pred_boxes[0].device, dtype=pred_boxes[0].dtype)
+        scales = torch.stack([scales[:, 1], scales[:, 0], scales[:, 1], scales[:, 0]], dim=1)  # (B, 4)
+        for scale, pred_boxes_s in enumerate(pred_boxes):
+            proposal = box_cxcywh_to_xyxy(pred_boxes_s)  # (B, N, 4)
+            proposal *= scales[:, None, :]
+
+            multiscale_proposal.append(proposal)
+
+        multiscale_prob = []
+        for scale, pred_logits_s in enumerate(pred_logits):
+            pred = pred_logits_s.sigmoid()
+            if pred.dim() == 3:
+                pred = pred.squeeze(-1)
+            multiscale_prob.append(pred)
+
+        nms_output = find_top_rpn_proposals(multiscale_proposal, multiscale_prob, image_sizes, self.nms_thresh, self.pre_nms_topk, self.post_nms_topk, self.min_box_size, training=False)
+        nms_boxes = nms_output['nms_boxes']
+        nms_prob = nms_output['nms_prob']
+        nms_boxes /= scales[:, None, :]
+        output = {
+            'nms_boxes': nms_boxes,
+            'nms_prob': nms_prob,
+        }
         return output
 
 
