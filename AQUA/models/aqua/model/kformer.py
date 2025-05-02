@@ -9,38 +9,31 @@
 """
 
 import math
-import os
-import warnings
-from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, Any, Mapping
 
 import torch
 from torch import Tensor, device, dtype, nn
 import torch.utils.checkpoint
 from torch import nn
-from torch.nn import CrossEntropyLoss
-import torch.nn.functional as F
 
 from transformers.activations import ACT2FN
-from transformers.file_utils import (
-    ModelOutput,
-)
+
 from transformers.modeling_outputs import (
-    BaseModelOutputWithPastAndCrossAttentions,
     BaseModelOutputWithCrossAttentions,
-    CausalLMOutputWithCrossAttentions,
-    MaskedLMOutput,
-    MultipleChoiceModelOutput,
-    NextSentencePredictorOutput,
-    QuestionAnsweringModelOutput,
-    SequenceClassifierOutput,
-    TokenClassifierOutput,
+    # BaseModelOutputWithPastAndCrossAttentions,
+    # CausalLMOutputWithCrossAttentions,
+    # MaskedLMOutput,
+    # MultipleChoiceModelOutput,
+    # NextSentencePredictorOutput,
+    # QuestionAnsweringModelOutput,
+    # SequenceClassifierOutput,
+    # TokenClassifierOutput,
 )
 from transformers.modeling_utils import (
     PreTrainedModel,
-    apply_chunking_to_forward,
-    find_pruneable_heads_and_indices,
-    prune_linear_layer,
+    # apply_chunking_to_forward,
+    # find_pruneable_heads_and_indices,
+    # prune_linear_layer,
 )
 from transformers.utils import logging
 from models.aqua.model.base_model import BertConfigW

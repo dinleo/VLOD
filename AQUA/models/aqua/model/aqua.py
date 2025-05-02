@@ -40,7 +40,6 @@ class AQuA(BaseModel):
 
         self.temp = nn.Parameter(0.07 * torch.ones([]))
         self.ln_vision = nn.LayerNorm(region_size)
-        # self.region_query = self.init_region_query()
 
     def init_kformer(self):
         encoder_config = BertConfigW()
@@ -58,8 +57,6 @@ class AQuA(BaseModel):
         kformer.unexpected_keys = self.unexpected_keys
         return kformer, kv_token
 
-    # def init_region_query(self):
-    #     return RegionFeature()
 
     def load_from_blip2(self, ckpt_path):
         blip2_state_dict = torch.load(ckpt_path, map_location="cpu")["model"]

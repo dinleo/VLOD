@@ -46,6 +46,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=UserWarning)
+warnings.filterwarnings(action="ignore", message="A parameter name that contains `beta` will be renamed.*")
+warnings.filterwarnings(action="ignore", message="A parameter name that contains `gamma` will be renamed.*")
 
 
 class Trainer(SimpleTrainer):
@@ -323,7 +325,7 @@ def main(args):
         cfg.runner.log_period = 1
 
     if cfg.runner.eval_only:
-        model = load_model(cfg.model.build, cfg.model.ckpt)
+        model = instantiate(cfg.model.build)
         model.to(cfg.runner.device)
         model = create_ddp_model(model)
         

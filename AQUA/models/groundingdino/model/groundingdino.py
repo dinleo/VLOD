@@ -239,7 +239,8 @@ class GroundingDINO(nn.Module):
         samples = nested_tensor_from_tensor_list(images)
 
         captions = [x["captions"] for x in batched_inputs]
-        # captions = ['object .']
+        if self.mode == "stage1":
+            captions = ['object.']
         names_list = [x["captions"][:-1].split(".") for x in batched_inputs]
 
         # encoder texts
@@ -255,10 +256,8 @@ class GroundingDINO(nn.Module):
         )
 
         # prepare targets
-        targets = None
-        if self.training:
-            gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
-            targets = self.prepare_targets(gt_instances, cate_to_token_mask_list, names_list)
+        gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+        targets = self.prepare_targets(gt_instances, cate_to_token_mask_list, names_list)
 
         if text_self_attention_masks.shape[1] > self.max_text_len:
             text_self_attention_masks = text_self_attention_masks[
@@ -377,9 +376,11 @@ class GroundingDINO(nn.Module):
         out = self.post_logit(captions, out, self.mode)
         if self.mode == "stage1":
             out["hs"] = hs
+            out["bert_output"] = bert_output
+
         # visualize(out["pred_logits"][0], out["pred_boxes"][0], captions[0], batched_inputs[0]['image'], threshold=0.05)
 
-        if not self.training:
+        if not self.training and self.mode != "stage1":
             results = self.post_logit.select_topk(out, images.image_sizes)
             processed_results = []
             for results_per_image, input_per_image, image_size in zip(

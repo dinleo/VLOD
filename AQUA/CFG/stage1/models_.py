@@ -66,6 +66,7 @@ gdino_args = dict(
     sub_sentence_present=True,
     max_text_len=256,
     device="cuda",
+    mode="stage1",
 )
 
 model.build = L(build_stage1)(args=dict(
@@ -74,11 +75,10 @@ model.build = L(build_stage1)(args=dict(
         ckpt_path="",
         blip_ckpt_path = "",
         region_query_generator=L(build_region_query_generator)(args=dict(
-            base_yaml_path="",
-            base_weight_path="",
+            rpn_yaml_path="",
         )),
     )),
-    groundingdino = L(build_groundingdino)(args=dict(
+    backbone = L(build_groundingdino)(args=dict(
         ckpt_path="",
         backbone=L(build_backbone)(
             args=backbone_args

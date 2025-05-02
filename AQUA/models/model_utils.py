@@ -89,7 +89,7 @@ def load_model(model, ckpt_path, strict=False):
     if ckpt_path:
         checkpoint = torch.load(ckpt_path, map_location="cpu")
         missing, unexpected = model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=strict)
-        print(f"Use checkpoint {ckpt_path}")
+        print(f"[Notice] [LOAD] {model.__class__.__name__} use checkpoint /{ckpt_path} ({len(missing)} missing, {len(unexpected)} unexpected)")
     return model
 
 
@@ -106,7 +106,7 @@ def safe_init(cls, args: dict):
 
     missing_keys = valid_keys - filtered_args.keys()
     if missing_keys:
-        print(f"[Notice] Missing keys for {cls.__name__} (set default): {sorted(missing_keys)}")
+        print(f"[Notice] [INIT] {cls.__name__} Missing keys (set default): {sorted(missing_keys)}")
 
     return cls(**filtered_args)
 
@@ -143,8 +143,9 @@ def print_tree(tree, depth=0, max_depth=1, prefix=""):
         return
     if depth == 0:
         module_width = 40
+        print("-" * (module_width + 22))
         print(f"{'Module'.ljust(module_width)} | {'Trainable':>9} | {'Frozen':>6}")
-        print("-" * (module_width + 20))
+        print("-" * (module_width + 22))
 
     module_width = 40
     total = len(tree)

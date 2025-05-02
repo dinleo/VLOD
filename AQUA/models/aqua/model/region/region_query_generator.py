@@ -19,6 +19,67 @@ from detectron2.modeling.roi_heads import build_roi_heads
 from detectron2.config import get_cfg
 from detectron2.checkpoint import DetectionCheckpointer
 
+from models.aqua.model.region.find_topk import find_top_rpn_proposals
+from models.aqua.util.box_ops import box_cxcywh_to_xyxy
+from models.model_utils import safe_init
+
+
+class RegionQueryGenerator(nn.Module):
+    def __init__(
+        self,
+        rpn_yaml_path,
+        nms_thresh: float=0.05,
+        pre_nms_topk: int=1,
+        post_nms_topk: int=32,
+        min_box_size: float=10,
+    ):
+        """
+        rpn_yaml_path (str): path to the rpn yaml file. If None, only nms will be applied.
+        nms_thresh (float): IoU threshold to use for NMS
+        pre_nms_topk (int): number of top k scoring proposals to keep before applying NMS.
+            When RPN is run on multiple feature maps (as in FPN) this number is per
+            feature map.
+        post_nms_topk (int): number of top k scoring proposals to keep after applying NMS.
+            When RPN is run on multiple feature maps (as in FPN) this number is total,
+            over all feature maps.
+        min_box_size (float): minimum proposal box side length in pixels (absolute units
+            wrt input images).
+        """
+        super().__init__()
+        self.rpn = None
+        self.nms_thresh = nms_thresh
+        self.pre_nms_topk = pre_nms_topk
+        self.post_nms_topk = post_nms_topk
+        self.min_box_size = min_box_size
+
+        if rpn_yaml_path:
+            cfg = get_cfg()
+            cfg.merge_from_file(rpn_yaml_path)
+            model = GeneralizedRCNN(cfg)
+            if cfg.MODEL.WEIGHTS:
+                DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
+            self.rpn = model
+
+    def forward(self, batched_inputs):
+        image_sizes = batched_inputs['image_sizes']
+        backbone_features = batched_inputs['backbone_features']
+
+        if self.rpn and backbone_features:
+            output = self.rpn(backbone_features)
+        else:
+            output = batched_inputs
+
+        pred_objectness = [output['pred_logits'].sigmoid()]
+        proposal = []
+        for i, p in enumerate(output['pred_boxes']):
+            image_size = image_sizes[i]
+            xyxy = box_cxcywh_to_xyxy(p)
+            xyxy.scale(scale_x=image_size[1], scale_y=image_size[0])
+            proposal.append(xyxy)
+
+        output = find_top_rpn_proposals(proposal, pred_objectness, image_sizes, self.nms_thresh, self.pre_nms_topk, self.post_nms_topk, self.min_box_size, training=False)
+        return output
+
 
 class GeneralizedRCNN(nn.Module):
     """
@@ -338,12 +399,6 @@ class ProposalNetwork(nn.Module):
         return processed_results
 
 def build_region_query_generator(args):
-    cfg = get_cfg()
-    cfg.merge_from_file(args.base_yaml_path)
-    cfg.MODEL.WEIGHTS = args.base_weight_path
-
-    model = GeneralizedRCNN(cfg)
-    if args.base_weight_path:
-        DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
+    model = safe_init(RegionQueryGenerator, args)
 
     return model
