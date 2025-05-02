@@ -18,7 +18,7 @@ class AQuA(BaseModel):
     def __init__(
             self,
             region_query_generator=None,
-            region_size=1408,
+            region_size=256,
             q_size=768,
             kv_size=768,
             num_kv_token=32,
@@ -40,7 +40,8 @@ class AQuA(BaseModel):
                 param.data.copy_(state_dict[key_orig])
 
         self.temp = nn.Parameter(0.07 * torch.ones([]))
-        self.ln_vision = nn.LayerNorm(region_size)
+        self.region_projection = nn.Linear(region_size, q_size)
+        # self.region_ln = nn.LayerNorm(region_size)
 
     def init_kformer(self):
         encoder_config = BertConfigW()
@@ -61,7 +62,6 @@ class AQuA(BaseModel):
     def load_from_blip2(self, ckpt_path):
         blip2_state_dict = torch.load(ckpt_path, map_location="cpu")["model"]
         new_state_dict = {}
-        kformer_state_dict = {}
         for k, v in blip2_state_dict.items():
             new_k = k
             if new_k == 'query_tokens':
@@ -74,12 +74,12 @@ class AQuA(BaseModel):
                     new_k = new_k.replace('.output.', '.drn.');flag=True
                 elif '.attention.' in new_k:        # include all QKV of self-attention
                     new_k = new_k.replace('Qformer.bert.encoder', 'Kformer.encoder');flag=True
-                elif '.crossattention.' in new_k:   # include only QK of cross-attention
-                    if '.self.query.' in new_k:         # query -> key
+                elif '.crossattention.' in new_k:   # include only blip's Q to ours K
+                    if '.self.query.' in new_k:
                         new_k = new_k.replace('.self.query.', '.self.key.');flag=True
-                    elif '.self.key.' in new_k:         # key -> region
-                        new_k = new_k.replace('.self.key.', '.self.region.');flag=True
-                    elif 'self.value.' in new_k:        # discard value
+                    # elif '.self.key.' in new_k:         # key -> region
+                    #     new_k = new_k.replace('.self.key.', '.self.region.');flag=True
+                    elif 'self.value.' in new_k or 'self.key' in new_k:        # discard value
                         pass
                 else:
                     pass
@@ -87,10 +87,10 @@ class AQuA(BaseModel):
                     new_k = new_k.replace('Qformer.bert.encoder', 'Kformer.encoder')
             new_state_dict[new_k] = v
         missing_keys, unexpected_keys = self.load_state_dict(new_state_dict, strict=False)
-        pattern = re.compile(r"Kformer\.encoder\.layer\.\d+\.crossattention\.self\.(query|value)\.")
+        pattern = re.compile(r"Kformer\.encoder\.layer\.\d+\.crossattention\.self\.(query|value|region)\.")
 
         for m in missing_keys:
-            assert m.startswith('region_query_generator') or pattern.match(m)
+            assert m.startswith('region') or pattern.match(m) or m.startswith('layerNorm')
 
         return ''
 
@@ -102,23 +102,42 @@ class AQuA(BaseModel):
     def forward(self, dict_inputs):
         # visualize(dict_inputs['multiscale_pred_logits'][0][0], dict_inputs['multiscale_pred_boxes'][0][0], 'object .', dict_inputs['images'][0],
         #           threshold=0.01, is_cxcy=True, is_logit=True, save_name='raw')
+
         with torch.no_grad():
-            outputs = self.region_query_generator(dict_inputs)
-            nms_prob = outputs['nms_prob']
-            nms_boxes = outputs['nms_boxes']
-            gt_labels = outputs['gt_labels']
+            nms_outputs = self.region_query_generator(dict_inputs)
+            if nms_outputs is None:
+                return None
+            nms_prob = nms_outputs['nms_prob']
+            nms_boxes = nms_outputs['nms_boxes']
+            nms_index = nms_outputs['nms_index']
+            gt_labels = nms_outputs['gt_labels']
 
         # visualize(nms_prob[0], nms_boxes[0], 'object .', dict_inputs['images'][0],
         #           threshold=0.01, is_cxcy=False, is_logit=False, save_name='nms')
-        # backbone_features = samples["backbone_features"]
-        # multiscale_region_query = self.region_query_generator(backbone_features)
-        # multiscale_region_query = self.ln_vision(multiscale_region_query)
-        # kv_tokens = self.kv_tokens.expand(multiscale_region_query[0].shape[0], -1, -1)
-        #
-        # outputs = self.Kformer(
-        #     multiscale_region_query=multiscale_region_query,
-        #     kv_tokens=kv_tokens
-        # )
+
+        multiscale_region_features = dict_inputs['multiscale_region_features']
+        multiscale_region_query = []
+        for feat in multiscale_region_features:
+            # feat: (B, Q=900, D)
+            B, Q, D = feat.shape
+            idx = nms_index.unsqueeze(-1).expand(-1, -1, D)  # (B, K, D)
+            region_query = torch.gather(feat, dim=1, index=idx)  # (B, K, D)
+            multiscale_region_query.append(region_query)
+
+        multiscale_region_query = self.layerNorm_vision(multiscale_region_query)
+        kv_tokens = self.kv_tokens.expand(multiscale_region_query[-1].shape[0], -1, -1)
+        q_tokens = self.region_projection(multiscale_region_query[-1])
+
+        kformer_outputs = self.Kformer(
+            q_tokens=q_tokens,
+            kv_tokens=kv_tokens,
+            multiscale_region_query=multiscale_region_query,
+        )
+        outputs = {
+            'kformer_outputs':kformer_outputs,
+            'nms_index':nms_index,
+            'gt_labels':gt_labels,
+        }
 
         return outputs
 

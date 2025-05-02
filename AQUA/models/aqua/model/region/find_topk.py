@@ -66,6 +66,7 @@ def find_top_rpn_proposals(
     # 1. Select top-k anchor for every level and every image
     topk_scores = []  # #lvl Tensor, each of shape N x topk
     topk_proposals = []
+    topk_indices = []
     level_ids = []  # #lvl Tensor, each of shape (topk,)
     batch_idx = move_device_like(torch.arange(num_images, device=device), proposals[0])
     for level_id, (proposals_i, logits_i) in enumerate(zip(proposals, pred_objectness_logits)):
@@ -82,6 +83,7 @@ def find_top_rpn_proposals(
 
         topk_proposals.append(topk_proposals_i)
         topk_scores.append(topk_scores_i)
+        topk_indices.append(topk_idx)
         level_ids.append(
             move_device_like(
                 torch.full((num_proposals_i,), level_id, dtype=torch.int64, device=device),
@@ -92,12 +94,14 @@ def find_top_rpn_proposals(
     # 2. Concat all levels together
     topk_scores = cat(topk_scores, dim=1)
     topk_proposals = cat(topk_proposals, dim=1)
+    topk_indices = cat(topk_indices, dim=1)
     level_ids = cat(level_ids, dim=0)
 
     # 3. For each image, run a per-level NMS, and choose topk results.
 
     nms_boxes = []
     nms_prob = []
+    nms_indices = []
     for n, image_size in enumerate(image_sizes):
         boxes = Boxes(topk_proposals[n])
         scores_per_img = topk_scores[n]
@@ -130,10 +134,12 @@ def find_top_rpn_proposals(
         keep = keep[:post_nms_topk]  # keep is already sorted
         nms_boxes.append(boxes[keep].tensor)
         nms_prob.append(scores_per_img[keep])
+        nms_indices.append(topk_indices[n][keep])
 
     results = {
         'nms_boxes': torch.stack(nms_boxes),
         'nms_prob': torch.stack(nms_prob),
+        'nms_index': torch.stack(nms_indices)
     }
     return results
 

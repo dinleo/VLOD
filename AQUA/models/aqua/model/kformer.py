@@ -88,15 +88,16 @@ class Kformer(PreTrainedModel):
 
     def forward(
         self,
-        multiscale_region_query,
+        q_tokens,
         kv_tokens,
         q_mask=None,
+        multiscale_region_query=None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
     ):
         """
-        :param multiscale_region_query: Multiscale region features with [Scale, Batch, Region, Dim=1408] shape.
+        :param multiscale_region_query: Multiscale region features with [Scale, Batch, Region, Dim] shape.
         :param kv_tokens: Key-value features used for the attention computation.
         :param q_mask: Optional mask applied on the query sequence for attention computation. Defaults to `None`, in which case all positions are attended.
         :param output_attentions: Whether or not to return attention probabilities. Defaults to the value in the model configuration.
@@ -120,22 +121,23 @@ class Kformer(PreTrainedModel):
             else self.config.use_return_dict
         )
 
-        input_shape = multiscale_region_query.size()[1:-1]
-        batch_size, seq_length = input_shape
+        input_shape = multiscale_region_query[0].size()[:2]
+        batch_size, query_num = input_shape
 
         if q_mask is None:
             q_mask = torch.ones(
-                (batch_size, seq_length), device=kv_tokens.device
+                (batch_size, query_num), device=q_tokens.device
             )
 
         extended_q_mask = self.get_extended_attention_mask(
-            q_mask, input_shape, kv_tokens.device
+            q_mask, input_shape, q_tokens.device
         )
 
         encoder_outputs = self.encoder(
-            multiscale_region_query=multiscale_region_query,
+            q_tokens=q_tokens,
             kv_tokens=kv_tokens,
             q_mask=extended_q_mask,
+            multiscale_region_query=multiscale_region_query,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict
@@ -210,17 +212,17 @@ class BertEncoder(nn.Module):
 
     def forward(
         self,
-        multiscale_region_query,
+        q_tokens,
         kv_tokens,
         q_mask,
+        multiscale_region_query,
         output_attentions=False,
         output_hidden_states=False,
         return_dict=True,
     ):
-        q_tokens = multiscale_region_query[0]
-        scale = multiscale_region_query.size()[0]
-        scale_interval = self.config.num_hidden_layers // (scale - 1)
-        assert self.config.num_hidden_layers  % (scale - 1) == 0
+        scale = len(multiscale_region_query)
+        scale_interval = self.config.num_hidden_layers // scale
+        assert (self.config.num_hidden_layers  % scale) == 0
 
         all_self_attentions = () if output_attentions else None
         all_hidden_states = (q_tokens,) if output_hidden_states else None
@@ -230,7 +232,7 @@ class BertEncoder(nn.Module):
 
         for i in range(self.config.num_hidden_layers):
             layer_module = self.layer[i]
-            scale_idx = 1 + i // scale_interval
+            scale_idx = scale - (i // scale_interval) - 1
             region_query = multiscale_region_query[scale_idx]
             layer_outputs = layer_module(
                 q_tokens=q_tokens,
@@ -309,7 +311,7 @@ class BertLayer(nn.Module):
             cross_attention_outputs = self.crossattention(
                 q_tokens=q_tokens,
                 kv_tokens=kv_tokens,
-                q_mask=q_mask,
+                q_mask=None,
                 region_query=region_query,
                 output_attentions=output_attentions,
             )
@@ -503,7 +505,7 @@ class BertSelfAttention(nn.Module):
         context_layer = context_layer.view(*new_context_layer_shape)
 
         outputs = (
-            (context_layer, attention_probs) if output_attentions else (context_layer,)
+            (context_layer, attention_probs) if output_attentions else (context_layer, None)
         )
 
         return outputs

@@ -238,9 +238,10 @@ class GroundingDINO(nn.Module):
         assert isinstance(images, ImageList)
         samples = nested_tensor_from_tensor_list(images)
 
-        captions = [x["captions"] for x in batched_inputs]
         if self.mode == "stage1":
-            captions = ['object.']
+            captions = ['things.object'] * len(batched_inputs)
+        else:
+            captions = [x["captions"] for x in batched_inputs]
         names_list = [x["captions"][:-1].split(".") for x in batched_inputs]
 
         # encoder texts

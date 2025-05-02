@@ -118,9 +118,11 @@ def check_frozen(model, max_depth=1):
         if params:
             node['Trainable Params'] = sum(p.requires_grad for p in params)
             node['Frozen Params'] = len(params) - node['Trainable Params']
+            node['Total Params'] = sum(p.numel() for p in params)
         else:
             node['Trainable Params'] = 0
             node['Frozen Params'] = 0
+            node['Total Params'] = 0
 
         children = {}
         for child_name, child_module in module.named_children():
@@ -143,15 +145,16 @@ def print_tree(tree, depth=0, max_depth=1, prefix=""):
         return
     if depth == 0:
         module_width = 40
-        print("-" * (module_width + 22))
-        print(f"{'Module'.ljust(module_width)} | {'Trainable':>9} | {'Frozen':>6}")
-        print("-" * (module_width + 22))
+        print("-" * (module_width + 34))
+        print(f"{'Module'.ljust(module_width)} | {'Trainable':>9} | {'Frozen':>6} |   Size  ")
+        print("-" * (module_width + 34))
 
     module_width = 40
     total = len(tree)
     for idx, (module_name, node) in enumerate(tree.items()):
         trainable = node['Trainable Params']
         frozen = node['Frozen Params']
+        total_params = format_params(node['Total Params'])
 
         if idx == total - 1:
             branch = "└── "
@@ -159,7 +162,7 @@ def print_tree(tree, depth=0, max_depth=1, prefix=""):
             branch = "├── "
 
         name_field = prefix + branch + module_name
-        print(f"{name_field.ljust(module_width)} | {trainable:9} | {frozen:6}")
+        print(f"{name_field.ljust(module_width)} | {trainable:9} | {frozen:6} | {str(total_params).rjust(9)}")
 
         if 'children' in node and depth < max_depth:
             if idx == total - 1:
@@ -167,6 +170,16 @@ def print_tree(tree, depth=0, max_depth=1, prefix=""):
             else:
                 extension = "│   "
             print_tree(node['children'], depth=depth+1, max_depth=max_depth, prefix=prefix + extension)
+
+def format_params(num):
+    if num >= 1_000_000_000:
+        return f"{num / 1_000_000_000:.2f}B"
+    elif num >= 1_000_000:
+        return f"{num / 1_000_000:.2f}M"
+    elif num >= 1_000:
+        return f"{num / 1_000:.2f}K"
+    else:
+        return str(num)
 
 def visualize(pred_logit, pred_boxes, caption, image, threshold=0.1, is_norm=True, is_logit=True, is_cxcy=True, save_name="result"):
     """

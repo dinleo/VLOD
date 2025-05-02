@@ -68,14 +68,15 @@ class RegionQueryGenerator(nn.Module):
         Args:
             dict_inputs:
                 - gt_instances: List of Instances with fields:
-                    - gt_boxes: (cx, cy, w, h), unnormalized
+                    - gt_boxes: (cx, cy, w, h), un-normalized
                     - gt_classes: int labels (0-based)
                     - image_size: (H, W)
                 - image_features: required if self.rpn is used
         Returns:
             dict:
                 - nms_prob: (B, K) scores after NMS; ≥100 means GT, class = score - 100
-                - nms_boxes: (B, K, 4) boxes in (x1, y1, x2, y2), pixel scale
+                - nms_boxes: (B, K, 4) boxes after NMS; (x1, y1, x2, y2), normalized scale
+                - nms_index: (B, K) index of original proposal in [0, 899]
                 - gt_labels: (B, K) int labels, -1 for non-GT
         """
         gt_instances = dict_inputs['gt_instances']
@@ -99,7 +100,8 @@ class RegionQueryGenerator(nn.Module):
         for scale, pred_logits_s in enumerate(pred_logits):
             pred = pred_logits_s.sigmoid()
             if pred.dim() == 3:
-                pred = pred.squeeze(-1)
+                # DETR class agnostic output
+                pred = pred.mean(dim=2)
             multiscale_prob.append(pred)
 
         # Make boxes
@@ -119,18 +121,18 @@ class RegionQueryGenerator(nn.Module):
             prop_b = multiscale_proposal[-1][b]  # (N, 4)
             prob_b = multiscale_prob[-1][b]  # (N,)
 
-            assert gt_b.numel() != 0
+            if gt_b.numel() == 0:
+                continue
 
             ious = box_iou(gt_b, prop_b)
             max_ious, max_idx = ious.max(dim=1)  # max over proposals (per GT)
             iou_sum = max_ious.sum()
 
-            # record
+            # print(f"{max_ious.mean()} {max_ious}")
             self.gt_prop_iou_mean = (self.gt_prop_iou_mean * self.gt_count) + iou_sum
             self.gt_count += len(max_ious)
             self.gt_prop_iou_mean /= self.gt_count
 
-            print(f"{max_ious.mean()} {max_ious}")
             for i in range(gt_b.size(0)):
                 if self.gt_iou_thresh < max_ious[i]:
                     prob_b[max_idx[i]] = cls_b[i].float() + 100
@@ -143,6 +145,7 @@ class RegionQueryGenerator(nn.Module):
         nms_output = find_top_rpn_proposals(multiscale_proposal, multiscale_prob, image_sizes, self.nms_iou_thresh, self.pre_nms_topk, self.post_nms_topk, self.min_box_size, training=False)
         nms_prob = nms_output['nms_prob']
         nms_boxes = nms_output['nms_boxes']
+        nms_index = nms_output['nms_index']
         nms_boxes /= scales[:, None, :]
 
         # nms_prob: shape (B, K)
@@ -155,10 +158,16 @@ class RegionQueryGenerator(nn.Module):
         output = {
             'nms_prob': nms_prob,
             'nms_boxes': nms_boxes,
+            'nms_index': nms_index,
             'gt_labels': gt_labels,
         }
         return output
 
+    def print_gt_matching(self):
+        print(f"GT and Top-Proposal IOU Mean: {self.gt_prop_iou_mean}")
+        print(f"Total GT Count: {self.gt_count}")
+        print(f"Discarded GT Count: {self.discard_gt_count}")
+        print(f"Discarded Ratio: {self.discard_gt_count / self.gt_count}")
 
 class GeneralizedRCNN(nn.Module):
     """
