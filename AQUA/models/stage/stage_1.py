@@ -22,7 +22,7 @@ class Stage1(nn.Module):
         if self.detr_backbone:
             self.detr_mode = True
             self.detr_backbone.mode = "stage1"
-            self.post_logit = PostProcessLogit(self.detr_backbone.tokenizer, max_token_len=768)
+            self.post_logit = PostProcessLogit(self.detr_backbone.tokenizer)
         else:
             self.detr_mode = False
             self.image_backbone = image_backbone
@@ -62,11 +62,14 @@ class Stage1(nn.Module):
                 aqua_input['multiscale_pred_logits'] = [detr_outputs['pred_logits']]
                 aqua_input['multiscale_pred_boxes'] = [detr_outputs['pred_boxes']]
                 aqua_input['multiscale_region_features'] = detr_outputs['hs']
-                text_features = self.detr_backbone.bert_output(gt_captions)
+                text_output = self.detr_backbone.bert_output(gt_captions)['bert_output']
             else:
-                aqua_input['image_features'] = self.image_backbone(batched_inputs)
-                text_features = self.text_backbone(batched_inputs)
+                image_output =  self.image_backbone(batched_inputs)
+                aqua_input['image_features'] = image_output['last_hidden_state']
+                text_output = self.text_backbone(batched_inputs)
 
+        text_embeds = text_output['last_hidden_state'].transpose(1, 2)
+        class_embeds = self.post_logit(text_embeds, gt_captions) # [Batch, Class in prompt, 768]
         # Aqua
         aqua_output = self.aqua(aqua_input)
 

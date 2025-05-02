@@ -17,17 +17,24 @@ class PostProcessLogit(torch.nn.Module):
         self.prompt_map_hub = {}
         self.coco_map_hub = {}
 
-    def forward(self, captions, outputs, mapping=None):
+    def forward(self, logit, captions, mapping=None):
         """
-        Change token logit to class logit.
+        - Convert token-level logits (Batch, Query, Token) into class-level logits (Batch, Query, Class)
+        - For classes composed of multiple tokens (e.g., "dining table"), their logits are averaged across tokens.
+        - Alternatively, if you're working with BERT embeddings of shape (Batch, Token, Dim=768),
+          you can apply `.transpose(1, 2)` and fed it to get class embeddings (Batch, Dim, Class) for classification.
         Args:
-            captions: list of "captions" each like "person . dog . cat ."
-            outputs: dict with key "pred_logits" of shape [B, Q, T]
-            mapping: if set "coco", map class logit to COCO's EVAL class logit.
+            logit: raw logits (non-sigmoid), shape [B, Q, T]
+                Token must self.max_token_len long if shorter, will be padded with -inf
+            captions: list of caption strings like ["person . dog . cat .", "..." ]
+            mapping:
+                if set to "coco", converts (B, Q, C) to (B, Q, 80) for COCO evaluation,
+                keeping only prompt classes that exactly match official COCO class names.
         Returns:
             logits_cls: Tensor of shape [B, Q, C]
         """
-        logit = outputs["pred_logits"]
+        assert logit.ndim == 3
+        logit = self.pad_token_dim(logit)
         logit[torch.isinf(logit)] = -20 # [B, Q, T]
         device = logit.device
         pos_maps = []
@@ -53,8 +60,7 @@ class PostProcessLogit(torch.nn.Module):
         pos_map_mask = (pos_map_mask == 0)
         class_logit = class_logit.masked_fill(pos_map_mask.unsqueeze(1), float('-inf'))
 
-        outputs["pred_logits"] = class_logit
-        return outputs
+        return class_logit
 
     def get_token2prompt_map(self, caption):
         """
@@ -163,6 +169,16 @@ class PostProcessLogit(torch.nn.Module):
             results.append(result)
         return results
 
+    def pad_token_dim(self, x):
+        if x.shape[2] == self.max_token_len:
+            return x
+        elif x.shape[2] > self.max_token_len:
+            raise ValueError(f"Input token dim {x.shape[-1]} exceeds max_token_len {self.max_token_len}")
+
+        pad_width = self.max_token_len - x.shape[-1]
+        pad_shape = list(x.shape[:-1]) + [pad_width]
+        pad = torch.full(pad_shape, float("-inf"), dtype=x.dtype, device=x.device)
+        return torch.cat([x, pad], dim=-1)
 
 cat2id = {
     "person": 0,

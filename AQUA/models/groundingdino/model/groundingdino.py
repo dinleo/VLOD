@@ -391,7 +391,7 @@ class GroundingDINO(nn.Module):
         #     self.unset_image_tensor() ## If necessary
 
         # change token logits to class logits
-        out = self.post_logit(captions, out, self.mode)
+        out["pred_logits"] = self.post_logit(out["pred_logits"], captions, self.mode)
         if self.mode == "stage1":
             out["hs"] = hs
             out["bert_output"] = bert_output
