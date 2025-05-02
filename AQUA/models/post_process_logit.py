@@ -126,10 +126,10 @@ class PostProcessLogit(torch.nn.Module):
         self.coco_map_hub[caption] = class_coco_map
         return class_coco_map
 
-    def select_topk(self, outputs, image_sizes):
+    def select_topk(self, output, image_sizes):
         """
         Arguments:
-            outputs have keys "pred_logits" and "pred_boxes"
+            output have keys "pred_logits" and "pred_boxes"
                 pred_logits (Tensor): tensor of shape (batch_size, num_queries, K).
                     The tensor predicts the classification probability for each query.
                 pred_boxes (Tensor): tensors of shape (batch_size, num_queries, 4).
@@ -139,8 +139,8 @@ class PostProcessLogit(torch.nn.Module):
         Returns:
             results (List[Instances]): a list of #images elements.
         """
-        box_cls = outputs["pred_logits"]
-        box_pred = outputs["pred_boxes"]
+        box_cls = output["pred_logits"]
+        box_pred = output["pred_boxes"]
         assert len(box_cls) == len(image_sizes)
         results = []
 

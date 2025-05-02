@@ -63,10 +63,10 @@ class RegionQueryGenerator(nn.Module):
                 DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
             self.rpn = model
 
-    def forward(self, dict_inputs):
+    def forward(self, dict_input):
         """
         Args:
-            dict_inputs:
+            dict_input:
                 - gt_instances: List of Instances with fields:
                     - gt_boxes: (cx, cy, w, h), un-normalized
                     - gt_classes: int labels (0-based)
@@ -79,14 +79,14 @@ class RegionQueryGenerator(nn.Module):
                 - nms_index: (B, K) index of original proposal in [0, 899]
                 - gt_labels: (B, K) int labels, -1 for non-GT
         """
-        gt_instances = dict_inputs['gt_instances']
+        gt_instances = dict_input['gt_instances']
         image_sizes = [i.image_size for i in gt_instances]
 
         if self.rpn:
             # image_features -> [Scale, Batch, (Boxes, Logit)]
-            rpn_output = self.rpn(dict_inputs['image_features'])
+            rpn_output = self.rpn(dict_input['image_features'])
         else:
-            rpn_output = dict_inputs
+            rpn_output = dict_input
 
         # logits (Scale, Batch, Proposal) must be raw logit. not sigmoid prob
         # boxes (Scale, Batch, Proposal, 4) must be normalized cxcywh coordinate
@@ -232,7 +232,7 @@ class GeneralizedRCNN(nn.Module):
     def _move_to_current_device(self, x):
         return move_device_like(x, self.pixel_mean)
 
-    def visualize_training(self, batched_inputs, proposals):
+    def visualize_training(self, batched_input, proposals):
         """
         A function used to visualize images and proposals. It shows ground truth
         bounding boxes on the original image and up to 20 top-scoring predicted
@@ -240,16 +240,16 @@ class GeneralizedRCNN(nn.Module):
         visualization functions for different models.
 
         Args:
-            batched_inputs (list): a list that contains input to the model.
+            batched_input (list): a list that contains input to the model.
             proposals (list): a list that contains predicted proposals. Both
-                batched_inputs and proposals should have the same length.
+                batched_input and proposals should have the same length.
         """
         from detectron2.utils.visualizer import Visualizer
 
         storage = get_event_storage()
         max_vis_prop = 20
 
-        for input, prop in zip(batched_inputs, proposals):
+        for input, prop in zip(batched_input, proposals):
             img = input["image"]
             img = convert_image_to_rgb(img.permute(1, 2, 0), self.input_format)
             v_gt = Visualizer(img, None)
@@ -267,11 +267,11 @@ class GeneralizedRCNN(nn.Module):
             storage.put_image(vis_name, vis_img)
             break  # only visualize one image in a batch
 
-    def forward(self, inputs):
+    def forward(self, input):
         """
         Args:
-            batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
-                Each item in the list contains the inputs for one image.
+            batched_input: a list, batched output of :class:`DatasetMapper` .
+                Each item in the list contains the input for one image.
                 For now, each item in the list is a dict that contains:
 
                 * image: Tensor, image in (C, H, W) format.
@@ -291,15 +291,15 @@ class GeneralizedRCNN(nn.Module):
                 "pred_boxes", "pred_classes", "scores", "pred_masks", "pred_keypoints"
         """
         # if not self.training:
-        #     return self.inference(batched_inputs)
-        batched_inputs = inputs['batched_inputs']
-        dino_images = inputs['images']
-        dino_gt_instances = inputs['gt_instances']
-        multiscale_features = inputs['multiscale_features']
+        #     return self.inference(batched_input)
+        batched_input = input['batched_input']
+        dino_images = input['images']
+        dino_gt_instances = input['gt_instances']
+        multiscale_features = input['multiscale_features']
 
-        images = self.preprocess_image(batched_inputs)
-        if "instances" in batched_inputs[0]:
-            gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+        images = self.preprocess_image(batched_input)
+        if "instances" in batched_input[0]:
+            gt_instances = [x["instances"].to(self.device) for x in batched_input]
         else:
             gt_instances = None
         features = self.backbone(images.tensor)
@@ -307,15 +307,15 @@ class GeneralizedRCNN(nn.Module):
         if self.proposal_generator is not None:
             proposals, proposal_losses = self.proposal_generator(images, features, gt_instances)
         else:
-            assert "proposals" in batched_inputs[0]
-            proposals = [x["proposals"].to(self.device) for x in batched_inputs]
+            assert "proposals" in batched_input[0]
+            proposals = [x["proposals"].to(self.device) for x in batched_input]
             proposal_losses = {}
 
         _, detector_losses = self.roi_heads(images, features, proposals, gt_instances)
         if self.vis_period > 0:
             storage = get_event_storage()
             if storage.iter % self.vis_period == 0:
-                self.visualize_training(batched_inputs, proposals)
+                self.visualize_training(batched_input, proposals)
 
         losses = {}
         losses.update(detector_losses)
@@ -324,38 +324,38 @@ class GeneralizedRCNN(nn.Module):
 
     def inference(
         self,
-        batched_inputs: List[Dict[str, torch.Tensor]],
+        batched_input: List[Dict[str, torch.Tensor]],
         detected_instances: Optional[List[Instances]] = None,
         do_postprocess: bool = True,
     ):
         """
-        Run inference on the given inputs.
+        Run inference on the given input.
 
         Args:
-            batched_inputs (list[dict]): same as in :meth:`forward`
+            batched_input (list[dict]): same as in :meth:`forward`
             detected_instances (None or list[Instances]): if not None, it
                 contains an `Instances` object per image. The `Instances`
                 object contains "pred_boxes" and "pred_classes" which are
                 known boxes in the image.
                 The inference will then skip the detection of bounding boxes,
-                and only predict other per-ROI outputs.
-            do_postprocess (bool): whether to apply post-processing on the outputs.
+                and only predict other per-ROI output.
+            do_postprocess (bool): whether to apply post-processing on the output.
 
         Returns:
             When do_postprocess=True, same as in :meth:`forward`.
-            Otherwise, a list[Instances] containing raw network outputs.
+            Otherwise, a list[Instances] containing raw network output.
         """
         assert not self.training
 
-        images = self.preprocess_image(batched_inputs)
+        images = self.preprocess_image(batched_input)
         features = self.backbone(images.tensor)
 
         if detected_instances is None:
             if self.proposal_generator is not None:
                 proposals, _ = self.proposal_generator(images, features, None)
             else:
-                assert "proposals" in batched_inputs[0]
-                proposals = [x["proposals"].to(self.device) for x in batched_inputs]
+                assert "proposals" in batched_input[0]
+                proposals = [x["proposals"].to(self.device) for x in batched_input]
 
             results, _ = self.roi_heads(images, features, proposals, None)
         else:
@@ -364,14 +364,14 @@ class GeneralizedRCNN(nn.Module):
 
         if do_postprocess:
             assert not torch.jit.is_scripting(), "Scripting is not supported for postprocess."
-            return GeneralizedRCNN._postprocess(results, batched_inputs, images.image_sizes)
+            return GeneralizedRCNN._postprocess(results, batched_input, images.image_sizes)
         return results
 
-    def preprocess_image(self, batched_inputs: List[Dict[str, torch.Tensor]]):
+    def preprocess_image(self, batched_input: List[Dict[str, torch.Tensor]]):
         """
         Normalize, pad and batch the input images.
         """
-        images = [self._move_to_current_device(x["image"]) for x in batched_inputs]
+        images = [self._move_to_current_device(x["image"]) for x in batched_input]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(
             images,
@@ -381,14 +381,14 @@ class GeneralizedRCNN(nn.Module):
         return images
 
     @staticmethod
-    def _postprocess(instances, batched_inputs: List[Dict[str, torch.Tensor]], image_sizes):
+    def _postprocess(instances, batched_input: List[Dict[str, torch.Tensor]], image_sizes):
         """
         Rescale the output instances to the target size.
         """
         # note: private function; subject to changes
         processed_results = []
         for results_per_image, input_per_image, image_size in zip(
-            instances, batched_inputs, image_sizes
+            instances, batched_input, image_sizes
         ):
             height = input_per_image.get("height", image_size[0])
             width = input_per_image.get("width", image_size[1])
@@ -441,7 +441,7 @@ class ProposalNetwork(nn.Module):
     def _move_to_current_device(self, x):
         return move_device_like(x, self.pixel_mean)
 
-    def forward(self, batched_inputs):
+    def forward(self, batched_input):
         """
         Args:
             Same as in :class:`GeneralizedRCNN.forward`
@@ -452,7 +452,7 @@ class ProposalNetwork(nn.Module):
                 The dict contains one key "proposals" whose value is a
                 :class:`Instances` with keys "proposal_boxes" and "objectness_logits".
         """
-        images = [self._move_to_current_device(x["image"]) for x in batched_inputs]
+        images = [self._move_to_current_device(x["image"]) for x in batched_input]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(
             images,
@@ -461,13 +461,13 @@ class ProposalNetwork(nn.Module):
         )
         features = self.backbone(images.tensor)
 
-        if "instances" in batched_inputs[0]:
-            gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
-        elif "targets" in batched_inputs[0]:
+        if "instances" in batched_input[0]:
+            gt_instances = [x["instances"].to(self.device) for x in batched_input]
+        elif "targets" in batched_input[0]:
             log_first_n(
-                logging.WARN, "'targets' in the model inputs is now renamed to 'instances'!", n=10
+                logging.WARN, "'targets' in the model input is now renamed to 'instances'!", n=10
             )
-            gt_instances = [x["targets"].to(self.device) for x in batched_inputs]
+            gt_instances = [x["targets"].to(self.device) for x in batched_input]
         else:
             gt_instances = None
         proposals, proposal_losses = self.proposal_generator(images, features, gt_instances)
@@ -478,7 +478,7 @@ class ProposalNetwork(nn.Module):
 
         processed_results = []
         for results_per_image, input_per_image, image_size in zip(
-            proposals, batched_inputs, images.image_sizes
+            proposals, batched_input, images.image_sizes
         ):
             height = input_per_image.get("height", image_size[0])
             width = input_per_image.get("width", image_size[1])

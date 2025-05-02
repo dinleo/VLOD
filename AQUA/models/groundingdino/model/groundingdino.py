@@ -271,18 +271,18 @@ class GroundingDINO(nn.Module):
         }
         return output
 
-    def forward(self, batched_inputs):
+    def forward(self, batched_input):
         # process images
-        images = self.preprocess_image(batched_inputs)
+        images = self.preprocess_image(batched_input)
         assert isinstance(images, ImageList)
         samples = nested_tensor_from_tensor_list(images)
 
         if self.mode == "stage1":
-            captions = ['things.'] * len(batched_inputs)
+            captions = ['things.'] * len(batched_input)
         else:
-            captions = [x["captions"] for x in batched_inputs]
+            captions = [x["captions"] for x in batched_input]
 
-        names_list = [x["captions"][:-1].split(".") for x in batched_inputs]
+        names_list = [x["captions"][:-1].split(".") for x in batched_input]
 
         # text backbone
         text_output = self.bert_output(captions, samples.device)
@@ -293,7 +293,7 @@ class GroundingDINO(nn.Module):
         cate_to_token_mask_list = text_output["cate_to_token_mask_list"]
 
         # prepare targets
-        gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+        gt_instances = [x["instances"].to(self.device) for x in batched_input]
         targets = self.prepare_targets(gt_instances, cate_to_token_mask_list, names_list)
 
         # encode
@@ -354,38 +354,38 @@ class GroundingDINO(nn.Module):
         )
 
         # deformable-detr-like anchor update
-        outputs_coord_list = []
+        output_coord_list = []
         for dec_lid, (layer_ref_sig, layer_bbox_embed, layer_hs) in enumerate(
             zip(reference[:-1], self.bbox_embed, hs)
         ):
             layer_delta_unsig = layer_bbox_embed(layer_hs) # offset (hs 256 -> box 4)
-            layer_outputs_unsig = layer_delta_unsig + inverse_sigmoid(layer_ref_sig) # prev box + offset
-            layer_outputs_unsig = layer_outputs_unsig.sigmoid()
-            outputs_coord_list.append(layer_outputs_unsig)
-        outputs_coord_list = torch.stack(outputs_coord_list) # 6 * [1, 900, 4]
+            layer_output_unsig = layer_delta_unsig + inverse_sigmoid(layer_ref_sig) # prev box + offset
+            layer_output_unsig = layer_output_unsig.sigmoid()
+            output_coord_list.append(layer_output_unsig)
+        output_coord_list = torch.stack(output_coord_list) # 6 * [1, 900, 4]
 
         # output
-        outputs_class = torch.stack(
+        output_class = torch.stack(
             [
                 layer_cls_embed(layer_hs, text_dict)
                 for layer_cls_embed, layer_hs in zip(self.class_embed, hs)
             ]
         )
-        out = {"pred_logits": outputs_class[-1],
-               "pred_boxes": outputs_coord_list[-1],
+        out = {"pred_logits": output_class[-1],
+               "pred_boxes": output_coord_list[-1],
                "targets": targets}
 
-        # # for intermediate outputs
+        # # for intermediate output
         # if self.aux_loss:
-        #     out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord_list)
+        #     out['aux_output'] = self._set_aux_loss(output_class, output_coord_list)
 
         # # for encoder output
         # if hs_enc is not None:
-        #     # prepare intermediate outputs
+        #     # prepare intermediate output
         #     interm_coord = ref_enc[-1]
         #     interm_class = self.transformer.enc_out_class_embed(hs_enc[-1], text_dict)
-        #     out['interm_outputs'] = {'pred_logits': interm_class, 'pred_boxes': interm_coord}
-        #     out['interm_outputs_for_matching_pre'] = {'pred_logits': interm_class, 'pred_boxes': init_box_proposal}
+        #     out['interm_output'] = {'pred_logits': interm_class, 'pred_boxes': interm_coord}
+        #     out['interm_output_for_matching_pre'] = {'pred_logits': interm_class, 'pred_boxes': init_box_proposal}
         # unset_image_tensor = kw.get('unset_image_tensor', True)
         # if unset_image_tensor:
         #     self.unset_image_tensor() ## If necessary
@@ -396,13 +396,13 @@ class GroundingDINO(nn.Module):
             out["hs"] = hs
             out["bert_output"] = bert_output
 
-        # visualize(out["pred_logits"][0], out["pred_boxes"][0], captions[0], batched_inputs[0]['image'], threshold=0.05)
+        # visualize(out["pred_logits"][0], out["pred_boxes"][0], captions[0], batched_input[0]['image'], threshold=0.05)
 
         if not self.training and self.mode != "stage1":
             results = self.post_logit.select_topk(out, images.image_sizes)
             processed_results = []
             for results_per_image, input_per_image, image_size in zip(
-                    results, batched_inputs, images.image_sizes
+                    results, batched_input, images.image_sizes
             ):
                 height = input_per_image.get("height", image_size[0])
                 width = input_per_image.get("width", image_size[1])
@@ -413,17 +413,17 @@ class GroundingDINO(nn.Module):
         return out
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_coord):
+    def _set_aux_loss(self, output_class, output_coord):
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
         return [
             {"pred_logits": a, "pred_boxes": b}
-            for a, b in zip(outputs_class[:-1], outputs_coord[:-1])
+            for a, b in zip(output_class[:-1], output_coord[:-1])
         ]
 
-    def preprocess_image(self, batched_inputs):
-        images = [self.normalizer(x["image"].to(self.device)) for x in batched_inputs]
+    def preprocess_image(self, batched_input):
+        images = [self.normalizer(x["image"].to(self.device)) for x in batched_input]
         images = ImageList.from_tensors(images)
 
         return images

@@ -30,10 +30,10 @@ class Stage1(nn.Module):
             self.post_logit = PostProcessLogit(self.text_backbone.tokenizer)
         self.freeze_backbone()
 
-    def forward(self, batched_inputs):
+    def forward(self, batched_input):
         # Process images
-        images = [i['image'] for i in batched_inputs]
-        gt_instances = [i['instances']for i in batched_inputs]
+        images = [i['image'] for i in batched_input]
+        gt_instances = [i['instances']for i in batched_input]
         aqua_input = {
             'images': images,
             'gt_instances': gt_instances,
@@ -58,20 +58,22 @@ class Stage1(nn.Module):
         with torch.no_grad():
             if self.detr_mode:
                 self.detr_backbone.eval()
-                detr_outputs = self.detr_backbone(batched_inputs)
-                aqua_input['multiscale_pred_logits'] = [detr_outputs['pred_logits']]
-                aqua_input['multiscale_pred_boxes'] = [detr_outputs['pred_boxes']]
-                aqua_input['multiscale_region_features'] = detr_outputs['hs']
+                detr_output = self.detr_backbone(batched_input)
+                aqua_input['multiscale_pred_logits'] = [detr_output['pred_logits']]
+                aqua_input['multiscale_pred_boxes'] = [detr_output['pred_boxes']]
+                aqua_input['multiscale_region_features'] = detr_output['hs']
                 text_output = self.detr_backbone.bert_output(gt_captions)['bert_output']
             else:
-                image_output =  self.image_backbone(batched_inputs)
+                image_output =  self.image_backbone(batched_input)
                 aqua_input['image_features'] = image_output['last_hidden_state']
-                text_output = self.text_backbone(batched_inputs)
+                text_output = self.text_backbone(batched_input)
 
         text_embeds = text_output['last_hidden_state'].transpose(1, 2)
         class_embeds = self.post_logit(text_embeds, gt_captions) # [Batch, Class in prompt, 768]
+
         # Aqua
         aqua_output = self.aqua(aqua_input)
+
 
         # Make target
 
@@ -93,8 +95,8 @@ class Stage1(nn.Module):
 
         self.aqua.freeze_backbone()
 
-    def preprocess_image(self, batched_inputs):
-        images = [self.normalizer(x["image"].to(self.device)) for x in batched_inputs]
+    def preprocess_image(self, batched_input):
+        images = [self.normalizer(x["image"].to(self.device)) for x in batched_input]
         images = ImageList.from_tensors(images)
 
         return images

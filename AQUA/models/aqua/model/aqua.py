@@ -100,23 +100,23 @@ class AQuA(BaseModel):
             param.requires_grad = False
         self.region_query_generator.eval()
 
-    def forward(self, dict_inputs):
-        # visualize(dict_inputs['multiscale_pred_logits'][0][0], dict_inputs['multiscale_pred_boxes'][0][0], 'object .', dict_inputs['images'][0],
+    def forward(self, dict_input):
+        # visualize(dict_input['multiscale_pred_logits'][0][0], dict_input['multiscale_pred_boxes'][0][0], 'object .', dict_input['images'][0],
         #           threshold=0.01, is_cxcy=True, is_logit=True, save_name='raw')
 
         with torch.no_grad():
-            nms_outputs = self.region_query_generator(dict_inputs)
-            if nms_outputs is None:
+            nms_output = self.region_query_generator(dict_input)
+            if nms_output is None:
                 return None
-            nms_prob = nms_outputs['nms_prob']
-            nms_boxes = nms_outputs['nms_boxes']
-            nms_index = nms_outputs['nms_index']
-            gt_labels = nms_outputs['gt_labels']
+            nms_prob = nms_output['nms_prob']
+            nms_boxes = nms_output['nms_boxes']
+            nms_index = nms_output['nms_index']
+            gt_labels = nms_output['gt_labels']
 
-        # visualize(nms_prob[0], nms_boxes[0], 'object .', dict_inputs['images'][0],
+        # visualize(nms_prob[0], nms_boxes[0], 'object .', dict_input['images'][0],
         #           threshold=0.01, is_cxcy=False, is_logit=False, save_name='nms')
 
-        multiscale_region_features = dict_inputs['multiscale_region_features']
+        multiscale_region_features = dict_input['multiscale_region_features']
         multiscale_region_query = []
         for feat in multiscale_region_features:
             # feat: (B, Q=900, D)
@@ -129,13 +129,13 @@ class AQuA(BaseModel):
         q_tokens = self.region_projection(multiscale_region_query[-1])
         kv_tokens = self.kv_tokens.expand(multiscale_region_query[-1].shape[0], -1, -1)
 
-        kformer_outputs = self.Kformer(
+        kformer_output = self.Kformer(
             q_tokens=q_tokens,
             kv_tokens=kv_tokens,
             multiscale_region_query=multiscale_region_query,
         )
-        outputs = {
-            'kformer_outputs':kformer_outputs,
+        output = {
+            'kformer_output':kformer_output,
             'nms_index':nms_index,
             'gt_labels':gt_labels,
         }
@@ -144,7 +144,7 @@ class AQuA(BaseModel):
         #     exit()
         # self.i +=1
 
-        return outputs
+        return output
 
 
 def build_aqua(args):
