@@ -1,6 +1,6 @@
 import torch
 from detectron2.structures import Boxes, Instances
-from ..util.box_ops import box_cxcywh_to_xyxy
+from torchvision.ops import box_convert
 
 class PostProcessLogit(torch.nn.Module):
     """
@@ -155,7 +155,7 @@ class PostProcessLogit(torch.nn.Module):
                 zip(scores, labels, boxes, image_sizes)
         ):
             result = Instances(image_size)
-            result.pred_boxes = Boxes(box_cxcywh_to_xyxy(box_pred_per_image))
+            result.pred_boxes = Boxes(box_convert(box_pred_per_image, in_fmt="xywh", out_fmt="xyxy"))
 
             result.pred_boxes.scale(scale_x=image_size[1], scale_y=image_size[0])
             result.scores = scores_per_image

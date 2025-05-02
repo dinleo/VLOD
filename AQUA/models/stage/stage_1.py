@@ -1,12 +1,9 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from typing import List
-from models.model_utils import load_model, safe_init
+
+from models.model_utils import load_model, safe_init, get_coco_cat_name
+from models.post_process_logit import PostProcessLogit
 from detectron2.structures import ImageList
-from models.groundingdino.util.misc import nested_tensor_from_tensor_list, NestedTensor
-from models.groundingdino.model.bertwarper import generate_masks_with_special_tokens_and_transfer_map
-from models.groundingdino.util.box_ops import box_xyxy_to_cxcywh
 
 class Stage1(nn.Module):
     def __init__(
@@ -25,15 +22,16 @@ class Stage1(nn.Module):
         if self.detr_backbone:
             self.detr_mode = True
             self.detr_backbone.mode = "stage1"
+            self.post_logit = PostProcessLogit(self.detr_backbone.tokenizer, max_token_len=768)
         else:
             self.detr_mode = False
             self.image_backbone = image_backbone
             self.text_backbone = text_backbone
+            self.post_logit = PostProcessLogit(self.text_backbone.tokenizer)
         self.freeze_backbone()
 
-
     def forward(self, batched_inputs):
-        # process images
+        # Process images
         images = [i['image'] for i in batched_inputs]
         gt_instances = [i['instances']for i in batched_inputs]
         aqua_input = {
@@ -42,6 +40,21 @@ class Stage1(nn.Module):
             'image_features': None,
             'text_features': None,
         }
+
+        # Make Captions for text backbone
+        gt_captions = []
+        class_to_token_idx = []
+        for g in gt_instances:
+            gt_class = list(set(g.gt_classes.detach().cpu().numpy()))
+            cat_names = get_coco_cat_name(gt_class)
+            caption = ". ".join(cat_names) + "."
+            c2t = {}
+            for i, c in enumerate(gt_class):
+                c2t[c] = i
+            gt_captions.append(caption)
+            class_to_token_idx.append(c2t)
+
+        # Backbone Inference
         with torch.no_grad():
             if self.detr_mode:
                 self.detr_backbone.eval()
@@ -49,11 +62,15 @@ class Stage1(nn.Module):
                 aqua_input['multiscale_pred_logits'] = [detr_outputs['pred_logits']]
                 aqua_input['multiscale_pred_boxes'] = [detr_outputs['pred_boxes']]
                 aqua_input['multiscale_region_features'] = detr_outputs['hs']
+                text_features = self.detr_backbone.bert_output(gt_captions)
             else:
                 aqua_input['image_features'] = self.image_backbone(batched_inputs)
-                aqua_input['text_features'] = self.text_backbone(batched_inputs)
+                text_features = self.text_backbone(batched_inputs)
 
+        # Aqua
         aqua_output = self.aqua(aqua_input)
+
+        # Make target
 
         return aqua_output
 

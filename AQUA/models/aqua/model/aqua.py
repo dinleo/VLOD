@@ -31,6 +31,7 @@ class AQuA(BaseModel):
         self.q_size = q_size
         self.kv_size = kv_size
         self.num_kv_token = num_kv_token
+        self.i = 0
 
         self.Kformer, self.kv_tokens = self.init_kformer()
         state_dict = self.Kformer.state_dict()
@@ -124,9 +125,9 @@ class AQuA(BaseModel):
             region_query = torch.gather(feat, dim=1, index=idx)  # (B, K, D)
             multiscale_region_query.append(region_query)
 
-        multiscale_region_query = self.layerNorm_vision(multiscale_region_query)
-        kv_tokens = self.kv_tokens.expand(multiscale_region_query[-1].shape[0], -1, -1)
+        # multiscale_region_query = self.layerNorm_vision(multiscale_region_query)
         q_tokens = self.region_projection(multiscale_region_query[-1])
+        kv_tokens = self.kv_tokens.expand(multiscale_region_query[-1].shape[0], -1, -1)
 
         kformer_outputs = self.Kformer(
             q_tokens=q_tokens,
@@ -138,6 +139,10 @@ class AQuA(BaseModel):
             'nms_index':nms_index,
             'gt_labels':gt_labels,
         }
+        # if self.i == 98:
+        #     self.region_query_generator.print_gt_matching()
+        #     exit()
+        # self.i +=1
 
         return outputs
 

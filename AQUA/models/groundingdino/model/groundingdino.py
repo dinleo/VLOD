@@ -38,8 +38,9 @@ from .utils import MLP, ContrastiveEmbed
 
 from detectron2.modeling import detector_postprocess
 from detectron2.structures import ImageList
-from .post_process_logit import PostProcessLogit
+
 from models.model_utils import safe_init, load_model, visualize
+from models.post_process_logit import PostProcessLogit
 
 
 class GroundingDINO(nn.Module):
@@ -232,22 +233,9 @@ class GroundingDINO(nn.Module):
     def init_ref_points(self, use_num_queries):
         self.refpoint_embed = nn.Embedding(use_num_queries, self.query_dim)
 
-    def forward(self, batched_inputs):
-        # process images
-        images = self.preprocess_image(batched_inputs)
-        assert isinstance(images, ImageList)
-        samples = nested_tensor_from_tensor_list(images)
-
-        if self.mode == "stage1":
-            captions = ['things.object'] * len(batched_inputs)
-        else:
-            captions = [x["captions"] for x in batched_inputs]
-        names_list = [x["captions"][:-1].split(".") for x in batched_inputs]
-
+    def bert_output(self, captions, device="cuda"):
         # encoder texts
-        tokenized = self.tokenizer(captions, padding="longest", return_tensors="pt").to(
-            samples.device
-        )
+        tokenized = self.tokenizer(captions, padding="longest", return_tensors="pt").to(device)
         (
             text_self_attention_masks,
             position_ids,
@@ -255,11 +243,6 @@ class GroundingDINO(nn.Module):
         ) = generate_masks_with_special_tokens_and_transfer_map(
             tokenized, self.specical_tokens, self.tokenizer
         )
-
-        # prepare targets
-        gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
-        targets = self.prepare_targets(gt_instances, cate_to_token_mask_list, names_list)
-
         if text_self_attention_masks.shape[1] > self.max_text_len:
             text_self_attention_masks = text_self_attention_masks[
                 :, : self.max_text_len, : self.max_text_len
@@ -279,9 +262,42 @@ class GroundingDINO(nn.Module):
             tokenized_for_encoder = tokenized
 
         bert_output = self.bert(**tokenized_for_encoder)  # bs, tokens, 768
+        output = {
+            'bert_output': bert_output,
+            'tokenized': tokenized,
+            'text_self_attention_masks': text_self_attention_masks,
+            'position_ids': position_ids,
+            'cate_to_token_mask_list': cate_to_token_mask_list,
+        }
+        return output
 
+    def forward(self, batched_inputs):
+        # process images
+        images = self.preprocess_image(batched_inputs)
+        assert isinstance(images, ImageList)
+        samples = nested_tensor_from_tensor_list(images)
+
+        if self.mode == "stage1":
+            captions = ['things.'] * len(batched_inputs)
+        else:
+            captions = [x["captions"] for x in batched_inputs]
+
+        names_list = [x["captions"][:-1].split(".") for x in batched_inputs]
+
+        # text backbone
+        text_output = self.bert_output(captions, samples.device)
+        bert_output = text_output["bert_output"]
+        tokenized = text_output["tokenized"]
+        text_self_attention_masks = text_output["text_self_attention_masks"]
+        position_ids = text_output["position_ids"]
+        cate_to_token_mask_list = text_output["cate_to_token_mask_list"]
+
+        # prepare targets
+        gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+        targets = self.prepare_targets(gt_instances, cate_to_token_mask_list, names_list)
+
+        # encode
         encoded_text = self.feat_map(bert_output["last_hidden_state"])  # bs, tokens, d_model=256
-
         text_token_mask = tokenized.attention_mask.bool()  # bs, tokens
         # text_token_mask: True for nomask, False for mask
         # text_self_attention_masks: True for nomask, False for mask
@@ -301,6 +317,7 @@ class GroundingDINO(nn.Module):
             "text_self_attention_masks": text_self_attention_masks,  # bs, tokens, tokens
         }
 
+        # image backbone
         features, poss = self.backbone(samples)
 
         # import ipdb; ipdb.set_trace()
