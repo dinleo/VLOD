@@ -46,8 +46,8 @@ class Stage1(nn.Module):
             if self.detr_mode:
                 self.detr_backbone.eval()
                 detr_outputs = self.detr_backbone(batched_inputs)
-                aqua_input['pred_logits'] = [detr_outputs['pred_logits']]
-                aqua_input['pred_boxes'] = [detr_outputs['pred_boxes']]
+                aqua_input['multiscale_pred_logits'] = [detr_outputs['pred_logits']]
+                aqua_input['multiscale_pred_boxes'] = [detr_outputs['pred_boxes']]
                 aqua_input['multiscale_region_features'] = detr_outputs['hs']
             else:
                 aqua_input['image_features'] = self.image_backbone(batched_inputs)

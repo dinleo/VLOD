@@ -46,8 +46,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=UserWarning)
-warnings.filterwarnings(action="ignore", message="A parameter name that contains `beta` will be renamed.*")
-warnings.filterwarnings(action="ignore", message="A parameter name that contains `gamma` will be renamed.*")
+warnings.filterwarnings(action="ignore", message="A parameter name that contains `beta` will be renamed internally to `bias`. Please use a different name to suppress this warning.")
+warnings.filterwarnings(action="ignore", message="A parameter name that contains `gamma` will be renamed internally to `weight`. Please use a different name to suppress this warning.")
 
 
 class Trainer(SimpleTrainer):

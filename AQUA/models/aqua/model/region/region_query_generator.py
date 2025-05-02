@@ -22,35 +22,38 @@ from detectron2.checkpoint import DetectionCheckpointer
 from models.aqua.model.region.find_topk import find_top_rpn_proposals
 from models.aqua.util.box_ops import box_cxcywh_to_xyxy
 from models.model_utils import safe_init
-
+from torchvision.ops import box_iou
 
 class RegionQueryGenerator(nn.Module):
     def __init__(
         self,
         rpn_yaml_path,
-        nms_thresh: float=0.05,
+        nms_iou_thresh: float=0.1,
+        gt_iou_thresh: float=0.5,
         pre_nms_topk: int=256,
         post_nms_topk: int=256,
         min_box_size: float=10,
     ):
         """
-        rpn_yaml_path (str): path to the rpn yaml file. If None, only nms will be applied.
-        nms_thresh (float): IoU threshold to use for NMS
-        pre_nms_topk (int): number of top k scoring proposals to keep before applying NMS.
-            When RPN is run on multiple feature maps (as in FPN) this number is per
-            feature map.
-        post_nms_topk (int): number of top k scoring proposals to keep after applying NMS.
-            When RPN is run on multiple feature maps (as in FPN) this number is total,
-            over all feature maps.
-        min_box_size (float): minimum proposal box side length in pixels (absolute units
-            wrt input images).
+        Args:
+            rpn_yaml_path (str): Path to RPN model config file (.yaml). If None, precomputed boxes must be provided.
+            nms_iou_thresh (float): IoU threshold for Non-Maximum Suppression (NMS).
+            gt_iou_thresh (float): Minimum IoU threshold for a proposal to be matched to a ground truth box.
+            pre_nms_topk (int): Number of top-scoring proposals to keep per feature level before NMS.
+            post_nms_topk (int): Total number of proposals to keep per image after NMS (across all levels).
+            min_box_size (float): Minimum box size in pixels. Boxes smaller than this are discarded.
         """
         super().__init__()
         self.rpn = None
-        self.nms_thresh = nms_thresh
+        self.nms_iou_thresh = nms_iou_thresh
+        self.gt_iou_thresh = gt_iou_thresh
         self.pre_nms_topk = pre_nms_topk
         self.post_nms_topk = post_nms_topk
         self.min_box_size = min_box_size
+        # record
+        self.gt_prop_iou_mean = 0
+        self.gt_count = 0
+        self.discard_gt_count = 0
 
         if rpn_yaml_path:
             cfg = get_cfg()
@@ -61,10 +64,22 @@ class RegionQueryGenerator(nn.Module):
             self.rpn = model
 
     def forward(self, dict_inputs):
+        """
+        Args:
+            dict_inputs:
+                - gt_instances: List of Instances with fields:
+                    - gt_boxes: (cx, cy, w, h), unnormalized
+                    - gt_classes: int labels (0-based)
+                    - image_size: (H, W)
+                - image_features: required if self.rpn is used
+        Returns:
+            dict:
+                - nms_prob: (B, K) scores after NMS; ≥100 means GT, class = score - 100
+                - nms_boxes: (B, K, 4) boxes in (x1, y1, x2, y2), pixel scale
+                - gt_labels: (B, K) int labels, -1 for non-GT
+        """
         gt_instances = dict_inputs['gt_instances']
         image_sizes = [i.image_size for i in gt_instances]
-        gt_boxes = [i.gt_boxes for i in gt_instances]
-        gt_classes = [i.gt_classes for i in gt_instances]
 
         if self.rpn:
             # image_features -> [Scale, Batch, (Boxes, Logit)]
@@ -72,18 +87,14 @@ class RegionQueryGenerator(nn.Module):
         else:
             rpn_output = dict_inputs
 
-        pred_boxes = rpn_output['pred_boxes']
-        pred_logits = rpn_output['pred_logits']
+        # logits (Scale, Batch, Proposal) must be raw logit. not sigmoid prob
+        # boxes (Scale, Batch, Proposal, 4) must be normalized cxcywh coordinate
+        pred_logits = rpn_output['multiscale_pred_logits']
+        pred_boxes = rpn_output['multiscale_pred_boxes']
+        device = pred_logits[0].device
+        dtype = pred_logits[0].dtype
 
-        multiscale_proposal = []
-        scales = torch.tensor(image_sizes, device=pred_boxes[0].device, dtype=pred_boxes[0].dtype)
-        scales = torch.stack([scales[:, 1], scales[:, 0], scales[:, 1], scales[:, 0]], dim=1)  # (B, 4)
-        for scale, pred_boxes_s in enumerate(pred_boxes):
-            proposal = box_cxcywh_to_xyxy(pred_boxes_s)  # (B, N, 4)
-            proposal *= scales[:, None, :]
-
-            multiscale_proposal.append(proposal)
-
+        # Make prob
         multiscale_prob = []
         for scale, pred_logits_s in enumerate(pred_logits):
             pred = pred_logits_s.sigmoid()
@@ -91,13 +102,60 @@ class RegionQueryGenerator(nn.Module):
                 pred = pred.squeeze(-1)
             multiscale_prob.append(pred)
 
-        nms_output = find_top_rpn_proposals(multiscale_proposal, multiscale_prob, image_sizes, self.nms_thresh, self.pre_nms_topk, self.post_nms_topk, self.min_box_size, training=False)
-        nms_boxes = nms_output['nms_boxes']
+        # Make boxes
+        multiscale_proposal = []
+        scales = torch.tensor(image_sizes, device=device, dtype=dtype)
+        scales = torch.stack([scales[:, 1], scales[:, 0], scales[:, 1], scales[:, 0]], dim=1)  # (B, 4)
+        for scale, pred_boxes_s in enumerate(pred_boxes):
+            proposal = box_cxcywh_to_xyxy(pred_boxes_s)  # (B, N, 4)
+            proposal *= scales[:, None, :]
+
+            multiscale_proposal.append(proposal)
+
+        # Replace GT score injection (proposal matching instead of GT insertion)
+        for b, gt_ins in enumerate(gt_instances):
+            gt_b = gt_ins.gt_boxes.tensor.to(device)  # (M, 4)
+            cls_b = gt_ins.gt_classes.to(device)  # (M,)
+            prop_b = multiscale_proposal[-1][b]  # (N, 4)
+            prob_b = multiscale_prob[-1][b]  # (N,)
+
+            assert gt_b.numel() != 0
+
+            ious = box_iou(gt_b, prop_b)
+            max_ious, max_idx = ious.max(dim=1)  # max over proposals (per GT)
+            iou_sum = max_ious.sum()
+
+            # record
+            self.gt_prop_iou_mean = (self.gt_prop_iou_mean * self.gt_count) + iou_sum
+            self.gt_count += len(max_ious)
+            self.gt_prop_iou_mean /= self.gt_count
+
+            print(f"{max_ious.mean()} {max_ious}")
+            for i in range(gt_b.size(0)):
+                if self.gt_iou_thresh < max_ious[i]:
+                    prob_b[max_idx[i]] = cls_b[i].float() + 100
+                else:
+                    # print(f"discard {max_ious[i]}")
+                    self.discard_gt_count += 1
+
+
+        # NMS
+        nms_output = find_top_rpn_proposals(multiscale_proposal, multiscale_prob, image_sizes, self.nms_iou_thresh, self.pre_nms_topk, self.post_nms_topk, self.min_box_size, training=False)
         nms_prob = nms_output['nms_prob']
+        nms_boxes = nms_output['nms_boxes']
         nms_boxes /= scales[:, None, :]
+
+        # nms_prob: shape (B, K)
+        gt_labels = torch.where(
+            nms_prob >= 100,
+            (nms_prob - 100).long(),
+            torch.full_like(nms_prob, -1, dtype=torch.long)
+        ) # actual class labels
+
         output = {
-            'nms_boxes': nms_boxes,
             'nms_prob': nms_prob,
+            'nms_boxes': nms_boxes,
+            'gt_labels': gt_labels,
         }
         return output
 

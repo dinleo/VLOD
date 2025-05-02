@@ -58,7 +58,6 @@ class AQuA(BaseModel):
         kformer.unexpected_keys = self.unexpected_keys
         return kformer, kv_token
 
-
     def load_from_blip2(self, ckpt_path):
         blip2_state_dict = torch.load(ckpt_path, map_location="cpu")["model"]
         new_state_dict = {}
@@ -101,11 +100,16 @@ class AQuA(BaseModel):
         self.region_query_generator.eval()
 
     def forward(self, dict_inputs):
+        # visualize(dict_inputs['multiscale_pred_logits'][0][0], dict_inputs['multiscale_pred_boxes'][0][0], 'object .', dict_inputs['images'][0],
+        #           threshold=0.01, is_cxcy=True, is_logit=True, save_name='raw')
         with torch.no_grad():
             outputs = self.region_query_generator(dict_inputs)
-            nms_boxes = outputs['nms_boxes']
             nms_prob = outputs['nms_prob']
-        visualize(nms_prob[0], nms_boxes[0], 'object .', dict_inputs['images'][0], threshold=0, is_cxcy=False, is_logit=False)
+            nms_boxes = outputs['nms_boxes']
+            gt_labels = outputs['gt_labels']
+
+        # visualize(nms_prob[0], nms_boxes[0], 'object .', dict_inputs['images'][0],
+        #           threshold=0.01, is_cxcy=False, is_logit=False, save_name='nms')
         # backbone_features = samples["backbone_features"]
         # multiscale_region_query = self.region_query_generator(backbone_features)
         # multiscale_region_query = self.ln_vision(multiscale_region_query)

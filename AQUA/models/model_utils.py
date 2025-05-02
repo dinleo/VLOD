@@ -168,13 +168,14 @@ def print_tree(tree, depth=0, max_depth=1, prefix=""):
                 extension = "│   "
             print_tree(node['children'], depth=depth+1, max_depth=max_depth, prefix=prefix + extension)
 
-def visualize(pred_logit, pred_boxes, caption, image, threshold=0.1, is_norm=True, is_logit=True, is_cxcy=True):
+def visualize(pred_logit, pred_boxes, caption, image, threshold=0.1, is_norm=True, is_logit=True, is_cxcy=True, save_name="result"):
     """
     Args:
         pred_logit: (N, C_prompt) logits before sigmoid
         pred_boxes: (N, 4) boxes in cxcywh format, normalized (0~1)
         caption: prompt string (e.g. "dog . cat . zebra .")
         image: torch Tensor [3, H, W], pixel image
+        threshold: detection confidence threshold
     """
 
     # 1. Prepare
@@ -216,20 +217,21 @@ def visualize(pred_logit, pred_boxes, caption, image, threshold=0.1, is_norm=Tru
     detections = sv.Detections(xyxy=pred_boxes)
 
     labels = [
-        f"{phrase} {score:.2f}"
+        (f"GT-{coco_name_list[int(score-100)]}" if score >= 100 else f"{phrase} {score:.2f}")
         for phrase, score in zip(phrases, scores.numpy())
     ]
 
     box_annotator = sv.BoxAnnotator()
     annotated = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     annotated = box_annotator.annotate(scene=annotated, detections=detections, labels=labels)
-
-    print(f"predict {len(pred_class)} instances")
-    cv2.imwrite("outputs/result.jpg", annotated)
+    num_gt = (scores >= 100).sum().item()
+    print(f"predict {len(pred_class)} instances (GT: {num_gt})")
+    cv2.imwrite(f"outputs/{save_name}.jpg", annotated)
     # cv2.imshow("Prediction", annotated)
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
     return annotated
 
 
+coco_name_list = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush']
 
