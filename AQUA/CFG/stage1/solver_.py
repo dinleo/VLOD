@@ -3,8 +3,9 @@ from omegaconf import OmegaConf
 from detectron2.config import LazyCall as L
 from detectron2.solver.build import get_default_optimizer_params
 
-from solver.criterion.detr_criterion import *
+from solver.criterion.stage1_criterion import Stage1Criterion
 from solver.optimizer.scheduler import modified_coco_scheduler
+import torch
 
 solver = OmegaConf.create()
 solver.optimizer = L(torch.optim.AdamW)(
@@ -19,26 +20,10 @@ solver.optimizer = L(torch.optim.AdamW)(
     weight_decay=0.1,
 )
 
-solver.criterion = L(DETRCriterion)(
-    matcher=L(HungarianMatcher)(
-        cost_class=L(FocalLossCost)(
-            alpha=0.25,
-            gamma=2.0,
-            weight=1.0,
-        ),
-        cost_bbox=L(L1Cost)(weight=5.0),
-        cost_giou=L(GIoUCost)(weight=1.0),
-    ),
-    loss_class=L(FocalLoss)(
-        alpha=0.25,
-        gamma=2.0,
-        loss_weight=1.0,
-    ),
-    loss_bbox=L(L1Loss)(loss_weight=5.0),
-    loss_giou=L(GIoULoss)(
-        eps=1e-6,
-        loss_weight=1.0,
-    ),
+solver.criterion = L(Stage1Criterion)(
+    align_loss_weight=0.1,
+    pos_magnitude_weight=0.05,
+    neg_magnitude_weight=0.1
 )
 
 solver.lr_scheduler = L(modified_coco_scheduler)(

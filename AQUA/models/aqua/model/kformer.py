@@ -148,7 +148,7 @@ class Kformer(PreTrainedModel):
         )
         sequence_output = encoder_outputs[0]
         if self.pad_inf:
-            sequence_output = sequence_output.masked_fill(q_mask.unsqueeze(-1) == 0, float(0))
+            sequence_output = sequence_output.masked_fill(q_mask.unsqueeze(-1) == 0, float("-inf"))
 
         if not return_dict:
             return sequence_output

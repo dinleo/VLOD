@@ -56,12 +56,13 @@ class DETRCriterion(nn.Module):
         self.loss_bbox = loss_bbox
         self.loss_giou = loss_giou
 
-    def forward(self, outputs, targets):
+    def forward(self, outputs):
         # output_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
         # Collect preds and targets excluding aux_outputs for matcher
         pred_logits = outputs["pred_logits"]
         pred_boxes = outputs["pred_boxes"]
+        targets = outputs["targets"]
         target_labels_list = [v["labels"] for v in targets]
         target_boxes_list = [v["boxes"] for v in targets]
 

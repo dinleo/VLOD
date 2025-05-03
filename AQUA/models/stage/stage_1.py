@@ -94,6 +94,8 @@ class Stage1(nn.Module):
         output = {
             'kformer_output': kformer_output,
             'targets': targets,
+            'gt_labels': gt_labels,
+            'captions': gt_captions,
         }
         return output
 

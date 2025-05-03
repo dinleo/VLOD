@@ -112,9 +112,7 @@ class Trainer(SimpleTrainer):
         """
         with autocast(enabled=self.amp):
             outputs = self.model(inputs)
-            return
-            targets = outputs["targets"]
-            loss_dict = self.criterion(outputs, targets)
+            loss_dict = self.criterion(outputs)
             if isinstance(loss_dict, torch.Tensor):
                 losses = loss_dict
                 loss_dict = {"total_loss": loss_dict}

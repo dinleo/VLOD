@@ -47,9 +47,8 @@ runner.wandb.project = "vlod"
 
 
 # modify solver
-solver.optimizer.lr = 0.0001
-solver.optimizer.weight_decay = 1e-4
-# solver.optimizer.params.lr_factor_func = lambda module_name: 0.1 if "backbone" in module_name else 1
+solver.optimizer.lr = 0.001
+solver.optimizer.weight_decay = 0.01
 solver.lr_scheduler.epochs=epoch
 solver.lr_scheduler.decay_epochs=epoch//2
 solver.lr_scheduler.base_steps=iter_per_epoch
