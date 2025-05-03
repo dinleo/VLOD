@@ -34,11 +34,14 @@ class Stage1Criterion(nn.Module):
     def __init__(self, 
                  align_weight=1,
                  contrast_weight=1,
-                 magnitude_weight=1):
+                 pos_mag_weight=1,
+                 neg_mag_weight=1
+        ):
         super().__init__()
         self.align_weight = align_weight
         self.contrast_weight = contrast_weight
-        self.magnitude_weight = magnitude_weight
+        self.pos_mag_weight = pos_mag_weight
+        self.neg_mag_weight = neg_mag_weight
 
     def forward(self, outputs):
         """
@@ -65,38 +68,44 @@ class Stage1Criterion(nn.Module):
 
 
         if gt_mask.any():
-            query = pred[gt_mask]  # [N=(All GT across batch), D]
-            key = target[gt_mask].detach()
+            pred_gt = pred[gt_mask]  # [N=(All GT across batch), D]
+            target_gt = target[gt_mask].detach()
 
             # 1. Alignment loss (BMSE to BERT target)
-            align_loss = info_nce_multi_positive(query, key, label_flat, self=False)
+            align_loss = info_nce_multi_positive(pred_gt, target_gt, label_flat, self=False)
 
             # 2. Contrastive loss (between preds)
-            contrast_loss = info_nce_multi_positive(query, query, label_flat, self=False)
+            # contrast_loss = info_nce_multi_positive(pred_gt, pred_gt, label_flat, self=True)
 
             # 3. magnitude loss: GT-positive should have large norm
-            pos_magnitude_loss = -pred[gt_mask].norm(dim=-1).mean()  # maximize norm
-            neg_magnitude_loss = pred[valid_neg_mask].norm(dim=-1).mean()  # minimize norm
-            magnitude_loss = pos_magnitude_loss + neg_magnitude_loss
+            pos_magnitude_loss = -pred_gt.norm(dim=-1).mean()  # maximize norm
+
+            if valid_neg_mask.any():
+                neg_magnitude_loss = pred[valid_neg_mask].norm(dim=-1).mean()  # minimize norm
+            else:
+                neg_magnitude_loss = torch.tensor(0.0, device=device)
         else:
             align_loss = torch.tensor(0.0, device=device)
             contrast_loss = torch.tensor(0.0, device=device)
-            magnitude_loss = torch.tensor(0.0, device=device)
+            pos_magnitude_loss = torch.tensor(0.0, device=device)
+            neg_magnitude_loss = torch.tensor(0.0, device=device)
 
 
         # 5. Total loss
         align_loss = align_loss * self.align_weight
-        contrast_loss = contrast_loss * self.contrast_weight
-        magnitude_loss = magnitude_loss * self.magnitude_weight
+        # contrast_loss = contrast_loss * self.contrast_weight
+        pos_magnitude_loss = pos_magnitude_loss * self.pos_mag_weight
+        neg_magnitude_loss = neg_magnitude_loss * self.neg_mag_weight
 
 
         return {
             'align_loss': align_loss,
-            'contrast_loss': contrast_loss,
-            'magnitude_loss': magnitude_loss
+            # 'contrast_loss': contrast_loss,
+            'pos_magnitude_loss': pos_magnitude_loss,
+            'neg_magnitude_loss': neg_magnitude_loss,
         }
 
-def info_nce_multi_positive(query, key, labels, self=True, temperature=0.07):
+def info_nce_multi_positive(query, key, labels, self=False, temperature=0.07):
     """
     query: [N, D]  — region features
     keys:  [N, D]  — target embeddings
@@ -117,7 +126,7 @@ def info_nce_multi_positive(query, key, labels, self=True, temperature=0.07):
         self_mask = ~torch.eye(len(labels), dtype=torch.bool, device=labels.device)
         label_mask = (label_mask & self_mask)
     label_mask = label_mask.float()
-    if label_mask.sum() == 0:
+    if label_mask.sum().item() == 0:
         return torch.tensor(0.0, device=labels.device)
 
     sim_exp = sim_matrix.exp()
