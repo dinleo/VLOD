@@ -66,11 +66,12 @@ class Kformer(PreTrainedModel):
     config_class = BertConfigW
     base_model_prefix = "Kformer"
     _keys_to_ignore_on_load_missing = [r"position_ids"]
-    def __init__(self, config, add_pooling_layer=False):
+    def __init__(self, config, add_pooling_layer=False, pad_inf=True):
         super().__init__(config)
         self.config = config
         self.encoder = BertEncoder(config)
         self.pooler = BertPooler(config) if add_pooling_layer else None
+        self.pad_inf = pad_inf
 
         self.init_weights()
 
@@ -146,6 +147,8 @@ class Kformer(PreTrainedModel):
             return_dict=return_dict
         )
         sequence_output = encoder_outputs[0]
+        if self.pad_inf:
+            sequence_output = sequence_output.masked_fill(q_mask.unsqueeze(-1) == 0, float("-inf"))
 
         if not return_dict:
             return sequence_output

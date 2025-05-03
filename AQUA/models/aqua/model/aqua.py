@@ -21,7 +21,7 @@ class AQuA(BaseModel):
             region_size=256,
             q_size=768,
             kv_size=768,
-            num_q_token=64,
+            num_q_token=50,
             num_kv_token=32,
     ):
         super().__init__()
