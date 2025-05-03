@@ -112,31 +112,38 @@ def safe_init(cls, args: dict):
 
 
 def check_frozen(model, max_depth=1):
-    def collect_status(module):
-        node = {}
-        params = list(module.parameters())
-        if params:
-            node['Trainable Params'] = sum(p.requires_grad for p in params)
-            node['Frozen Params'] = len(params) - node['Trainable Params']
-            node['Total Params'] = sum(p.numel() for p in params)
-        else:
-            node['Trainable Params'] = 0
-            node['Frozen Params'] = 0
-            node['Total Params'] = 0
+    def collect_status(module, name_path=""):
+        own_params = list(module.named_parameters(recurse=False))
 
-        children = {}
+        node = {
+            'Trainable Params': 0,
+            'Frozen Params': 0,
+            'Total Params': 0,
+            'children': {}
+        }
+
+        for param_name, param in own_params:
+            param_node = {
+                'Trainable Params': int(param.requires_grad),
+                'Frozen Params': int(not param.requires_grad),
+                'Total Params': param.numel()
+            }
+            node['children'][param_name] = param_node
+            node['Trainable Params'] += param_node['Trainable Params']
+            node['Frozen Params'] += param_node['Frozen Params']
+            node['Total Params'] += param_node['Total Params']
+
         for child_name, child_module in module.named_children():
-            children[child_name] = collect_status(child_module)
-
-        if children:
-            node['children'] = children
+            full_child_name = f"{name_path}.{child_name}" if name_path else child_name
+            child_node = collect_status(child_module, full_child_name)
+            node['children'][child_name] = child_node
+            node['Trainable Params'] += child_node['Trainable Params']
+            node['Frozen Params'] += child_node['Frozen Params']
+            node['Total Params'] += child_node['Total Params']
 
         return node
 
-    tree = {}
-    for name, module in model.named_children():
-        tree[name] = collect_status(module)
-
+    tree = {'__root__': collect_status(model)}
     print_tree(tree, max_depth=max_depth)
     return tree
 

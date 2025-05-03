@@ -309,7 +309,7 @@ def do_train(cfg):
         start_iter = trainer.iter + 1
     else:
         start_iter = 0
-    check_frozen(model)
+    check_frozen(model, max_depth=5)
     trainer.train(start_iter, cfg.runner.max_iter)
 
 

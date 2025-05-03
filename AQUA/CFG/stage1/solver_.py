@@ -19,7 +19,7 @@ solver.optimizer = L(torch.optim.AdamW)(
     weight_decay=0.1,
 )
 
-solver.criterion = L(BaseCriterion)(
+solver.criterion = L(DETRCriterion)(
     matcher=L(HungarianMatcher)(
         cost_class=L(FocalLossCost)(
             alpha=0.25,

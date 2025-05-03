@@ -35,7 +35,11 @@ class AQuA(BaseModel):
         self.num_kv_token = num_kv_token
         self.i = 0
 
-        self.Kformer, self.kv_tokens = self.init_kformer()
+        self.Kformer = self.init_kformer()
+        self.kv_tokens = nn.Parameter(
+            torch.zeros(1, self.num_kv_token, self.kv_size)
+        )
+        self.kv_tokens.data.normal_(mean=0.0, std=0.02)
         state_dict = self.Kformer.state_dict()
         for name, param in self.Kformer.named_parameters():
             if "_query" in name:
@@ -54,13 +58,7 @@ class AQuA(BaseModel):
         encoder_config.num_kv_token = self.num_kv_token
 
         kformer = Kformer(encoder_config)
-        kv_token = nn.Parameter(
-            torch.zeros(1, self.num_kv_token, encoder_config.kv_size)
-        )
-        kv_token.data.normal_(mean=0.0, std=encoder_config.initializer_range)
-        kformer.missing_keys = self.missing_keys
-        kformer.unexpected_keys = self.unexpected_keys
-        return kformer, kv_token
+        return kformer
 
     def load_from_blip2(self, ckpt_path):
         blip2_state_dict = torch.load(ckpt_path, map_location="cpu")["model"]
@@ -93,14 +91,21 @@ class AQuA(BaseModel):
         pattern = re.compile(r"Kformer\.encoder\.layer\.\d+\.crossattention\.self\.(query|value|region)\.")
 
         for m in missing_keys:
-            assert m.startswith('region') or pattern.match(m) or m.startswith('layerNorm')
+            assert m.startswith('region') or pattern.match(m) or m.startswith('layerNorm'), m
 
         return ''
 
     def freeze_backbone(self):
-        for param in self.region_query_generator.parameters():
-            param.requires_grad = False
         self.region_query_generator.eval()
+        self.freeze_key()
+
+    def freeze_key(self):
+        for name, param in self.Kformer.named_parameters():
+            pattern = re.compile(r"encoder\.layer\.\d+\.crossattention\.self\.key\.")
+            if pattern.match(name):
+                print(name)
+                param.requires_grad=False
+        self.kv_tokens.requires_grad = False
 
     def forward(self, dict_input):
         # visualize(dict_input['multiscale_pred_logits'][0][0], dict_input['multiscale_pred_boxes'][0][0], 'object .', dict_input['images'][0],
