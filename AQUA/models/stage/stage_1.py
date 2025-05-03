@@ -121,6 +121,14 @@ class Stage1(nn.Module):
 
         return images
 
+    def state_dict(self, *args, destination=None, prefix='', keep_vars=False):
+        ret = super().state_dict()
+        new_state_dict = {}
+        for k, v in ret.items():
+            if k.startswith("aqua"):
+                new_state_dict[k.replace("aqua.", "")] = v
+
+        return new_state_dict
 
 
 def build_stage1(args):

@@ -21,10 +21,11 @@ import inspect
 from omegaconf import DictConfig
 
 import cv2
-import numpy as np
+import os
 import supervision as sv
 from torchvision.ops import box_convert
-
+from dotenv import load_dotenv
+load_dotenv()
 
 class WandbWriter(EventWriter):
     """
@@ -40,12 +41,14 @@ class WandbWriter(EventWriter):
             kwargs: other arguments passed to `torch.utils.tensorboard.SummaryWriter(...)`
         """
         self._window_size = window_size
-
+        WDB = os.getenv('WANDB')
+        if WDB:
+            wandb.login(key=WDB)
         self._writer = wandb.init(
             entity=runner_cfg.wandb.entity,
             project=runner_cfg.wandb.project,
             name=runner_cfg.name,
-            dir=runner_cfg.output_dir,
+            dir="wandb",
         )
         self._last_write = -1
 

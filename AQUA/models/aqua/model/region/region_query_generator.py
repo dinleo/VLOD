@@ -27,7 +27,7 @@ from torchvision.ops import box_iou
 class RegionQueryGenerator(nn.Module):
     def __init__(
         self,
-        rpn_yaml_path,
+        rpn_yaml_path=None,
         nms_iou_thresh: float=0.1,
         gt_iou_thresh: float=0.5,
         pre_nms_topk: int=256,

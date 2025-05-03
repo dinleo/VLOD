@@ -45,8 +45,9 @@ def default_setup_detectron2(cfg, args):
     # detectron2's default_setup uses hardcoded keys within a specific configuration namespace
     # e.g., cfg.train.seed, cfg.train.output_dir, cfg.train.cudnn_benchmark, cfg.train.float32_precision, and args.eval_only
 
-    date_str = datetime.datetime.now().strftime("%m%d_%H%M")
-    cfg.runner.output_dir = os.path.join(cfg.runner.output_dir, cfg.runner.name, date_str)
+    if cfg.runner.dev_test:
+        date_str = datetime.datetime.now().strftime("%m%d_%H%M")
+        cfg.runner.output_dir = os.path.join(cfg.runner.output_dir, date_str)
 
     cfg.train = cfg.runner
     args.eval_only = cfg.runner.eval_only

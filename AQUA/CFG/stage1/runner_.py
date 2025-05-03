@@ -31,9 +31,9 @@ runner.update(
     # options for PeriodicCheckpointer, which saves a model checkpoint
     # after every `checkpointer.period` iterations,
     # and only `checkpointer.max_to_keep` number of checkpoint will be kept.
-    checkpointer=dict(period=5000, max_to_keep=100),
+    checkpointer=dict(period=1000, max_to_keep=100),
     # run evaluation after every `eval_period` number of iterations
-    eval_period=5000,
+    eval_period=1000,
     # output log to console every `log_period` number of iterations.
     log_period=20,
     # logging training info to Wandb

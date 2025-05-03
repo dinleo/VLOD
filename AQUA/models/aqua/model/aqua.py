@@ -10,6 +10,7 @@ import re
 
 from models.aqua.model.base_model import BaseModel, BertConfigW
 from models.aqua.model.kformer import Kformer
+from models.aqua.model.region.region_query_generator import build_region_query_generator
 from models.model_utils import safe_init, load_model
 from models.model_utils import visualize
 
@@ -28,6 +29,8 @@ class AQuA(BaseModel):
 
         # Project vision feature to hidden_size
         self.region_query_generator = region_query_generator
+        if region_query_generator is None:
+            self.region_query_generator = build_region_query_generator({})
         self.region_size = region_size
         self.q_size = q_size
         self.kv_size = kv_size

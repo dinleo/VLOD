@@ -40,6 +40,7 @@ from detectron2.checkpoint import DetectionCheckpointer
 from models.model_utils import WandbWriter, check_frozen
 from solver.optimizer import ema
 from CFG.cfg_utils import default_setup_detectron2
+from hf_up import upload
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
@@ -61,8 +62,7 @@ class Trainer(SimpleTrainer):
         criterion,
         dataloader,
         optimizer,
-        amp=False,
-        clip_grad_params=None,
+        runner,
         grad_scaler=None,
         batch_size_scale=1,
     ):
@@ -73,18 +73,18 @@ class Trainer(SimpleTrainer):
             assert not (model.device_ids and len(model.device_ids) > 1), unsupported
         assert not isinstance(model, DataParallel), unsupported
 
-        if amp:
+        self.runner = runner
+        self.amp = self.runner.amp.enabled
+
+        if self.amp:
             if grad_scaler is None:
                 from torch.cuda.amp import GradScaler
 
                 grad_scaler = GradScaler()
         self.grad_scaler = grad_scaler
-        
-        # set True to use amp training
-        self.amp = amp
 
         # gradient clip hyper-params
-        self.clip_grad_params = clip_grad_params
+        self.clip_grad_params = self.runner.clip_grad.params if self.runner.clip_grad.enabled else None
         
         # batch_size_scale
         self.batch_size_scale = batch_size_scale
@@ -258,13 +258,12 @@ def do_train(cfg):
         criterion=criterion,
         dataloader=train_loader,
         optimizer=optim,
-        amp=cfg.runner.amp.enabled,
-        clip_grad_params=cfg.runner.clip_grad.params if cfg.runner.clip_grad.enabled else None,
+        runner=cfg.runner
     )
     
     checkpointer = DetectionCheckpointer(
         model,
-        cfg.runner.output_dir,
+        f"{cfg.runner.output_dir}",
         trainer=trainer,
         # save model ema
         **ema.may_get_ema_checkpointer(cfg.runner, model)
@@ -287,16 +286,11 @@ def do_train(cfg):
             hooks.IterationTimer(),
             ema.EMAHook(cfg.runner, model) if cfg.runner.model_ema.enabled else None,
             hooks.LRScheduler(scheduler=lr_scheduler),
-            hooks.PeriodicCheckpointer(checkpointer, **cfg.runner.checkpointer)
-            if comm.is_main_process()
-            else None,
-            hooks.EvalHook(cfg.runner.eval_period, lambda: do_test(cfg, model)),
-            hooks.PeriodicWriter(
-                writers,
-                period=cfg.runner.log_period,
-            )
-            if comm.is_main_process()
-            else None,
+            hooks.EvalHook(cfg.runner.eval_period, lambda: do_test(cfg, model)) if cfg.runner.do_eval else None,
+            # Log and Save
+            hooks.PeriodicCheckpointer(checkpointer, **cfg.runner.checkpointer) if comm.is_main_process() else None,
+            hooks.PeriodicWriter(writers, period=cfg.runner.log_period) if comm.is_main_process() else None,
+            hooks.EvalHook(cfg.runner.eval_period, lambda: upload(""))
         ]
     )
 
@@ -318,10 +312,11 @@ def main(args):
 
     # Enable fast debugging by running several iterations to check for any bugs.
     if cfg.runner.dev_test:
-        cfg.dataloader.train.total_batch_size = 2
+        cfg.dataloader.train.total_batch_size = 1
         cfg.dataloader.train.num_workers = 1
-        cfg.runner.max_iter = 200
-        cfg.runner.eval_period = 100
+        cfg.runner.iter_per_epoch = 20
+        cfg.runner.epoch = 2
+        cfg.runner.eval_period = 20
         cfg.runner.log_period = 1
 
     if cfg.runner.eval_only:
