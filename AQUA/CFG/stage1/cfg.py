@@ -19,7 +19,7 @@ solver = get_config(f"{project_name}/solver_.py").solver
 # modify dataloader
 dataloader.train.dataset.filter_empty = False
 dataloader.train.num_workers = 8
-dataloader.train.total_batch_size = 1
+dataloader.train.total_batch_size = 8
 dataloader.test_sub.dataset.n = eval_sample
 
 

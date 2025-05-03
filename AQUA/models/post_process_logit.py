@@ -13,13 +13,15 @@ class PostProcessLogit(torch.nn.Module):
         self.tokenlizer = tokenlizer
         self.num_coco_cls = num_coco_cls
         self.max_token_len = max_token_len
+        self.max_classes = max_token_len // 2
         self.topk_num = topk_num
         self.prompt_map_hub = {}
         self.coco_map_hub = {}
 
     def forward(self, logit, captions, mapping=None):
         """
-        - Convert token-level logits (Batch, Query, Token) into class-level logits (Batch, Query, Class)
+        - Convert token-level logits (Batch, Query, Token=256) into class-level logits (Batch, Query, Class=128)
+            - Max Class is 128 and pad with -inf for not present in the caption.
         - For classes composed of multiple tokens (e.g., "dining table"), their logits are averaged across tokens.
         - Alternatively, if you're working with BERT embeddings of shape (Batch, Token, Dim=768),
           you can apply `.transpose(1, 2)` and fed it to get class embeddings (Batch, Dim, Class) for classification.
@@ -56,8 +58,7 @@ class PostProcessLogit(torch.nn.Module):
             # (B, Q, C) -> (B, Q, 80)
             class_logit = class_logit @ pos_maps
 
-        pos_map_mask = pos_maps.sum(dim=1)
-        pos_map_mask = (pos_map_mask == 0)
+        pos_map_mask = (pos_maps.sum(dim=1) == 0)
         class_logit = class_logit.masked_fill(pos_map_mask.unsqueeze(1), float('-inf'))
 
         return class_logit
@@ -79,7 +80,7 @@ class PostProcessLogit(torch.nn.Module):
             offsets = offsets.tolist()
 
         cat_names = [c.strip() for c in caption.strip(" .").split(".") if c.strip()]
-        positive_map = torch.zeros((len(cat_names), self.max_token_len), dtype=torch.float)
+        positive_map = torch.zeros((self.max_classes, self.max_token_len), dtype=torch.float)
 
         curr_char_pos = 0
         for i, cat in enumerate(cat_names):
@@ -115,8 +116,7 @@ class PostProcessLogit(torch.nn.Module):
             return self.coco_map_hub[caption]
 
         cat_names = [c.strip() for c in caption.strip(" .").split(".") if c.strip()]
-        num_prompt = len(cat_names)
-        class_coco_map = torch.zeros(num_prompt, self.num_coco_cls, dtype=torch.float)
+        class_coco_map = torch.zeros(self.max_classes, self.num_coco_cls, dtype=torch.float)
 
         for i, name in enumerate(cat_names):
             coco_id = cat2id.get(name, -1)

@@ -321,6 +321,7 @@ def main(args):
     # Enable fast debugging by running several iterations to check for any bugs.
     if cfg.runner.dev_test:
         cfg.dataloader.train.total_batch_size = 1
+        cfg.dataloader.train.num_workers = 1
         cfg.runner.max_iter = 200
         cfg.runner.eval_period = 100
         cfg.runner.log_period = 1
