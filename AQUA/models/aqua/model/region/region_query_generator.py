@@ -140,20 +140,23 @@ class RegionQueryGenerator(nn.Module):
                     # print(f"discard {max_ious[i]}")
                     self.discard_gt_count += 1
 
-
         # NMS
         nms_output = find_top_rpn_proposals(multiscale_proposal, multiscale_prob, image_sizes, self.nms_iou_thresh, self.pre_nms_topk, self.post_nms_topk, self.min_box_size, training=False)
         nms_prob = nms_output['nms_prob']
         nms_boxes = nms_output['nms_boxes']
         nms_index = nms_output['nms_index']
-        nms_boxes /= scales[:, None, :]
+        for batch in range(len(nms_boxes)):
+            nms_boxes[batch] /= scales[batch][None, :]
 
         # nms_prob: shape (B, K)
-        gt_labels = torch.where(
-            nms_prob >= 100,
-            (nms_prob - 100).long(),
-            torch.full_like(nms_prob, -1, dtype=torch.long)
-        ) # actual class labels
+        gt_labels = []
+        for p in nms_prob:
+            gt_label = torch.where(
+                p >= 100,
+                (p - 100).long(),
+                torch.full_like(p, -1, dtype=torch.long)
+            )
+            gt_labels.append(gt_label)
 
         output = {
             'nms_prob': nms_prob,

@@ -90,16 +90,19 @@ class Kformer(PreTrainedModel):
         self,
         q_tokens,
         kv_tokens,
-        q_mask=None,
+        self_mask=None,
+        cross_mask=None,
         multiscale_region_query=None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
     ):
         """
-        :param multiscale_region_query: Multiscale region features with [Scale, Batch, Region, Dim] shape.
+        :param q_tokens: query tokens
         :param kv_tokens: Key-value features used for the attention computation.
-        :param q_mask: Optional mask applied on the query sequence for attention computation. Defaults to `None`, in which case all positions are attended.
+        :param self_mask: Optional mask applied on the self attention computation. Defaults to `None`, in which case all positions are attended.
+        :param cross_mask: Optional mask applied on the cross attention computation. Defaults to `None`, in which case all positions are attended.
+        :param multiscale_region_query: Multiscale region features with [Scale, Batch, Region, Dim] shape.
         :param output_attentions: Whether or not to return attention probabilities. Defaults to the value in the model configuration.
         :param output_hidden_states: Whether or not to return all hidden states. Defaults to the value in the model configuration.
         :param return_dict: Whether or not to return outputs as a dictionary. Defaults to the value in the model configuration.
@@ -121,22 +124,30 @@ class Kformer(PreTrainedModel):
             else self.config.use_return_dict
         )
 
-        input_shape = multiscale_region_query[0].size()[:2]
-        batch_size, query_num = input_shape
+        batch_size, query_num, q_size = q_tokens.size()
+        _, key_num, key_size = kv_tokens.size()
 
-        if q_mask is None:
-            q_mask = torch.ones(
-                (batch_size, query_num), device=q_tokens.device
-            )
+        # ----------- Self-Attention Mask -----------
+        if self_mask is None:
+            self_mask = torch.ones((batch_size, query_num), device=q_tokens.device)
 
-        extended_q_mask = self.get_extended_attention_mask(
-            q_mask, input_shape, q_tokens.device
-        )
+        # Expand to [B, 1, 1, Q] for broadcasting in attention
+        extended_self_mask = self.get_extended_attention_mask(self_mask, (batch_size, query_num), q_tokens.device)
+
+        # ----------- Cross-Attention Mask -----------
+        if cross_mask is None:
+            cross_mask = self_mask[:, :, None]  # (B, Q, 1)
+            cross_mask = cross_mask.expand(batch_size, query_num, key_num)  # (B, Q, K)
+            extended_cross_mask = cross_mask[:, None, :, :]  # (B, 1, Q, K)
+            extended_cross_mask = (1.0 - extended_cross_mask) * -10000.0
+        else:
+            extended_cross_mask = self.get_extended_attention_mask(cross_mask, (batch_size, key_num), q_tokens.device)
 
         encoder_outputs = self.encoder(
             q_tokens=q_tokens,
             kv_tokens=kv_tokens,
-            q_mask=extended_q_mask,
+            self_mask=extended_self_mask,
+            cross_mask=extended_cross_mask,
             multiscale_region_query=multiscale_region_query,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
@@ -214,7 +225,8 @@ class BertEncoder(nn.Module):
         self,
         q_tokens,
         kv_tokens,
-        q_mask,
+        self_mask,
+        cross_mask,
         multiscale_region_query,
         output_attentions=False,
         output_hidden_states=False,
@@ -237,7 +249,8 @@ class BertEncoder(nn.Module):
             layer_outputs = layer_module(
                 q_tokens=q_tokens,
                 kv_tokens=kv_tokens,
-                q_mask=q_mask,
+                self_mask=self_mask,
+                cross_mask=cross_mask,
                 region_query=region_query,
                 output_attentions=output_attentions,
             )
@@ -293,14 +306,15 @@ class BertLayer(nn.Module):
         self,
         q_tokens,
         kv_tokens,
-        q_mask,
+        self_mask,
+        cross_mask,
         region_query,
         output_attentions=False
     ):
         self_attention_outputs = self.attention(
             q_tokens=q_tokens,
             kv_tokens=None,
-            q_mask=q_mask,
+            mask=self_mask,
             region_query=None,
             output_attentions=output_attentions
         )
@@ -311,7 +325,7 @@ class BertLayer(nn.Module):
             cross_attention_outputs = self.crossattention(
                 q_tokens=q_tokens,
                 kv_tokens=kv_tokens,
-                q_mask=None,
+                mask=cross_mask,
                 region_query=region_query,
                 output_attentions=output_attentions,
             )
@@ -338,14 +352,14 @@ class BertAttention(nn.Module):
         self,
         q_tokens,
         kv_tokens,
-        q_mask,
+        mask,
         region_query,
         output_attentions=False,
     ):
         self_outputs = self.self(
             q_tokens=q_tokens,
             kv_tokens=kv_tokens,
-            q_mask=q_mask,
+            mask=mask,
             region_query=region_query,
             output_attentions=output_attentions,
         )
@@ -420,7 +434,7 @@ class BertSelfAttention(nn.Module):
         self,
         q_tokens,
         kv_tokens,
-        q_mask,
+        mask,
         region_query,
         output_attentions=False,
     ):
@@ -484,9 +498,9 @@ class BertSelfAttention(nn.Module):
                 )
 
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        if q_mask is not None:
+        if mask is not None:
             # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-            attention_scores = attention_scores + q_mask
+            attention_scores = attention_scores + mask
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)

@@ -21,6 +21,7 @@ class AQuA(BaseModel):
             region_size=256,
             q_size=768,
             kv_size=768,
+            num_q_token=64,
             num_kv_token=32,
     ):
         super().__init__()
@@ -30,6 +31,7 @@ class AQuA(BaseModel):
         self.region_size = region_size
         self.q_size = q_size
         self.kv_size = kv_size
+        self.num_q_token = num_q_token
         self.num_kv_token = num_kv_token
         self.i = 0
 
@@ -116,22 +118,34 @@ class AQuA(BaseModel):
         # visualize(nms_prob[0], nms_boxes[0], 'object .', dict_input['images'][0],
         #           threshold=0.01, is_cxcy=False, is_logit=False, save_name='nms')
 
+        # Make Query
         multiscale_region_features = dict_input['multiscale_region_features']
         multiscale_region_query = []
         for feat in multiscale_region_features:
             # feat: (B, Q=900, D)
-            B, Q, D = feat.shape
-            idx = nms_index.unsqueeze(-1).expand(-1, -1, D)  # (B, K, D)
-            region_query = torch.gather(feat, dim=1, index=idx)  # (B, K, D)
-            multiscale_region_query.append(region_query)
+            per_batch_queries = []
+            for b in range(len(feat)):
+                idx = nms_index[b]  # shape: (K,)
+                region_query_b = self.pad_query(feat[b][idx])  # (K, D)
+                per_batch_queries.append(region_query_b) # (num_q_token, D)
+            multiscale_region_query.append(torch.stack(per_batch_queries, dim=0)) # (B, num_q_token, D)
 
-        # multiscale_region_query = self.layerNorm_vision(multiscale_region_query)
+        # Make Query mask
+        q_mask = []
+        for labels in gt_labels:  # labels: Tensor of shape (K_b,)
+            num_valid = min(len(labels), self.num_q_token)
+            mask = torch.zeros(self.num_q_token, device=labels.device)
+            mask[:num_valid] = 1.0
+            q_mask.append(mask)
+        q_mask = torch.stack(q_mask, dim=0)  # shape: (B, num_q_token)
+
         q_tokens = self.region_projection(multiscale_region_query[-1])
         kv_tokens = self.kv_tokens.expand(multiscale_region_query[-1].shape[0], -1, -1)
 
         kformer_output = self.Kformer(
             q_tokens=q_tokens,
             kv_tokens=kv_tokens,
+            q_mask=q_mask,
             multiscale_region_query=multiscale_region_query,
         )
         output = {
@@ -145,6 +159,19 @@ class AQuA(BaseModel):
         # self.i +=1
 
         return output
+
+    def pad_query(self, tensor):
+        target_len = self.num_q_token
+        Q, D = tensor.shape
+        if Q == target_len:
+            return tensor
+        elif Q > target_len:
+            return tensor[:target_len]
+        else:
+            pad_shape = list(tensor.shape)
+            pad_shape[0] = target_len - Q
+            pad_tensor = torch.zeros(pad_shape, dtype=tensor.dtype, device=tensor.device)
+            return torch.cat([tensor, pad_tensor], dim=0)
 
 
 def build_aqua(args):

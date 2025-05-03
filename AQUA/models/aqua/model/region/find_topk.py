@@ -137,9 +137,9 @@ def find_top_rpn_proposals(
         nms_indices.append(topk_indices[n][keep])
 
     results = {
-        'nms_boxes': torch.stack(nms_boxes),
-        'nms_prob': torch.stack(nms_prob),
-        'nms_index': torch.stack(nms_indices)
+        'nms_boxes': nms_boxes,
+        'nms_prob': nms_prob,
+        'nms_index': nms_indices
     }
     return results
 
