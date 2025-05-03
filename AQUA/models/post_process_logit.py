@@ -24,7 +24,8 @@ class PostProcessLogit(torch.nn.Module):
             - Max Class is 128 and pad with -inf for not present in the caption.
         - For classes composed of multiple tokens (e.g., "dining table"), their logits are averaged across tokens.
         - Alternatively, if you're working with BERT embeddings of shape (Batch, Token, Dim=768),
-          you can apply `.transpose(1, 2)` and fed it to get class embeddings (Batch, Dim, Class) for classification.
+          you can apply `.transpose(1, 2)` and fed it to get class embeddings (Batch, Dim, Class)
+          then, you can apply `output.transpose(1, 2)` to get (Batch, Class, Dim) for classification.
         Args:
             logit: raw logits (non-sigmoid), shape [B, Q, T]
                 Token must self.max_token_len long if shorter, will be padded with -inf

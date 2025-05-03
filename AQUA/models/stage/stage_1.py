@@ -69,7 +69,7 @@ class Stage1(nn.Module):
                 text_output = self.text_backbone(batched_input)
 
             text_embeds = text_output['last_hidden_state'].transpose(1, 2)
-            class_embeds = self.post_logit(text_embeds, gt_captions) # [Batch, Class in prompt, 768]
+            class_embeds = self.post_logit(text_embeds, gt_captions).transpose(1, 2) # [Batch, Class in prompt, 768]
 
         # Aqua
         aqua_output = self.aqua(aqua_input)
@@ -77,27 +77,19 @@ class Stage1(nn.Module):
         gt_labels = aqua_output['gt_labels']
 
         # Make target
-        targets = []
+        targets = torch.zeros_like(kformer_output)
         for b in range(len(gt_labels)):
             labels = gt_labels[b]  # (Q,)
-            class_embed = class_embeds[b]  # (C, 768)
+            class_embed = class_embeds[b]  # (C_prompt, 768)
             c2t = class_to_token_idx[b]  # dict: {class_id → token_idx}
-            target_vecs = []
 
-            for l in labels:
-                cls = l.item()
+            for q in range(labels.shape[0]):
+                cls = labels[q].item()
                 if cls == -1:
                     continue
                 assert cls in c2t
-
                 token_idx = c2t[cls]
-                target_vecs.append(class_embed[token_idx])  # (768,)
-
-            if target_vecs:
-                target_tensor = torch.stack(target_vecs, dim=0)  # (GT_Instance, 768)
-            else:
-                target_tensor = torch.empty((0, class_embed.shape[-1]), device=class_embed.device)
-            targets.append(target_tensor)
+                targets[b, q] = class_embed[token_idx]  # (768,)
 
         output = {
             'kformer_output': kformer_output,

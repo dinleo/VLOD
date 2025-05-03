@@ -21,7 +21,7 @@ class AQuA(BaseModel):
             region_size=256,
             q_size=768,
             kv_size=768,
-            num_q_token=50,
+            num_q_token=64,
             num_kv_token=32,
     ):
         super().__init__()
@@ -118,16 +118,17 @@ class AQuA(BaseModel):
         # visualize(nms_prob[0], nms_boxes[0], 'object .', dict_input['images'][0],
         #           threshold=0.01, is_cxcy=False, is_logit=False, save_name='nms')
 
-        # Make Query
+        # Make Query (B, Q=64, D)
         multiscale_region_features = dict_input['multiscale_region_features']
         multiscale_region_query = []
         for feat in multiscale_region_features:
-            # feat: (B, Q=900, D)
+            # feat: (B, DinoQ=900, D)
             per_batch_queries = []
             for b in range(len(feat)):
-                idx = nms_index[b]  # shape: (K,)
-                region_query_b = self.pad_query(feat[b][idx])  # (K, D)
-                per_batch_queries.append(region_query_b) # (num_q_token, D)
+                idx = nms_index[b]  # K=selected by nms including GT
+                nms_region_query = feat[b][idx] # (K, D)
+                region_query_b = self.pad_query(nms_region_query)  # pad or crop to (Q, D)
+                per_batch_queries.append(region_query_b) # (Q, D)
             multiscale_region_query.append(torch.stack(per_batch_queries, dim=0)) # (B, num_q_token, D)
 
         # Make Query mask

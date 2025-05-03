@@ -21,7 +21,7 @@ from solver.losses import FocalLoss, GIoULoss, L1Loss
 from solver.matcher.box_util import box_cxcywh_to_xyxy
 from solver.matcher import  HungarianMatcher, FocalLossCost, GIoUCost, L1Cost
 
-class BaseCriterion(nn.Module):
+class DETRCriterion(nn.Module):
     """Base criterion for calculating losses for DETR-like models.
 
     The process happens in two steps:
