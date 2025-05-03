@@ -32,87 +32,101 @@ class Stage1Criterion(nn.Module):
     """
 
     def __init__(self, 
-                 align_loss_weight=1.0, 
-                 pos_magnitude_weight=0.05, 
-                 neg_magnitude_weight=0.1):
+                 align_weight=1,
+                 contrast_weight=1,
+                 magnitude_weight=1):
         super().__init__()
-        self.align_loss_weight = align_loss_weight
-        self.pos_magnitude_weight = pos_magnitude_weight
-        self.neg_magnitude_weight = neg_magnitude_weight
+        self.align_weight = align_weight
+        self.contrast_weight = contrast_weight
+        self.magnitude_weight = magnitude_weight
 
-    def forward(self, outputs, targets=None):
+    def forward(self, outputs):
         """
         outputs: dict with
             'kformer_output': (B, Q, D) — region embeddings
             'targets': (B, Q, D) — target embeddings (0 for negatives)
+            'gt_labels': List of (Q,) int class ids for each query in the batch. -1 for non-GT
         """
-
         pred = outputs['kformer_output']  # [B, Q, D]
         target = outputs['targets']       # [B, Q, D]
+        gt_labels = outputs['gt_labels']  # [B, Q]
+        B, Q, D = pred.shape
         device = pred.device
 
-        # 1. gt mask: positive sample (target vector is non-zero)
-        gt_mask = (target.norm(dim=-1) > 0)      # [B, Q]
-        non_gt_mask = ~gt_mask                   # [B, Q]
+        # Mask
+        gt_label_tensor = torch.full((B, Q), fill_value=-1, dtype=torch.long, device=device)
+        for i, labels in enumerate(gt_labels):
+            trunc_labels = labels[:Q]
+            gt_label_tensor[i, :trunc_labels.shape[0]] = trunc_labels
+        gt_mask = gt_label_tensor > -1
+        valid_mask = ~torch.isinf(pred).any(dim=-1)
+        valid_neg_mask = (~gt_mask) & valid_mask
+        label_flat = gt_label_tensor[gt_mask]
 
-        # 2. cosine similarity loss (for positives only)
+
         if gt_mask.any():
-            pred_norm = F.normalize(pred[gt_mask], dim=-1)       # [GT(across all batch), Q]
-            target_norm = F.normalize(target[gt_mask].detach(), dim=-1)   # [GT(across all batch), Q]
-            align_loss = 1.0 - (pred_norm * target_norm).sum(-1).mean()
+            query = pred[gt_mask]  # [N=(All GT across batch), D]
+            key = target[gt_mask].detach()
+
+            # 1. Alignment loss (BMSE to BERT target)
+            align_loss = info_nce_multi_positive(query, key, label_flat, self=False)
+
+            # 2. Contrastive loss (between preds)
+            contrast_loss = info_nce_multi_positive(query, query, label_flat, self=False)
+
+            # 3. magnitude loss: GT-positive should have large norm
+            pos_magnitude_loss = -pred[gt_mask].norm(dim=-1).mean()  # maximize norm
+            neg_magnitude_loss = pred[valid_neg_mask].norm(dim=-1).mean()  # minimize norm
+            magnitude_loss = pos_magnitude_loss + neg_magnitude_loss
         else:
             align_loss = torch.tensor(0.0, device=device)
+            contrast_loss = torch.tensor(0.0, device=device)
+            magnitude_loss = torch.tensor(0.0, device=device)
 
-        # 3. magnitude loss: GT-positive should have large norm
-        if gt_mask.any():
-            pos_magnitude_loss = -pred[gt_mask].norm(dim=-1).mean()  # maximize norm
-        else:
-            pos_magnitude_loss = torch.tensor(0.0, device=device)
-
-        # 4. magnitude loss: GT-negative should have small norm
-        # (Only for valid entries — not -inf padded)
-        valid_mask = ~torch.isinf(pred).any(dim=-1)
-        valid_neg_mask = non_gt_mask & valid_mask
-
-        if valid_neg_mask.any():
-            neg_magnitude_loss = pred[valid_neg_mask].norm(dim=-1).mean()  # minimize norm
-        else:
-            neg_magnitude_loss = torch.tensor(0.0, device=device)
 
         # 5. Total loss
-        align_loss = align_loss * self.align_loss_weight
-        pos_magnitude_loss = pos_magnitude_loss * self.pos_magnitude_weight
-        neg_magnitude_loss = neg_magnitude_loss * self.neg_magnitude_weight
+        align_loss = align_loss * self.align_weight
+        contrast_loss = contrast_loss * self.contrast_weight
+        magnitude_loss = magnitude_loss * self.magnitude_weight
 
 
         return {
-            'loss_align': align_loss,
-            'loss_pos_magnitude': pos_magnitude_loss,
-            'loss_neg_magnitude': neg_magnitude_loss
+            'align_loss': align_loss,
+            'contrast_loss': contrast_loss,
+            'magnitude_loss': magnitude_loss
         }
 
-def info_nce_multi_positive(query, keys, labels, temperature=0.07):
+def info_nce_multi_positive(query, key, labels, self=True, temperature=0.07):
     """
     query: [N, D]  — region features
-    keys:  [M, D]  — target embeddings
+    keys:  [N, D]  — target embeddings
     labels: [N]    — int class ids of each query
     """
 
     # Normalize
     query = F.normalize(query, dim=-1)
-    keys = F.normalize(keys, dim=-1)
+    key = F.normalize(key, dim=-1)
 
-    # Cosine similarity matrix: [N, M]
-    sim_matrix = torch.matmul(query, keys.T) / temperature
+    # Cosine similarity matrix: [N, N]
+    sim_matrix = torch.matmul(query, key.T) / temperature
 
-    # Same-class mask: [N, M]
-    label_mask = (labels.unsqueeze(1) == labels.unsqueeze(0)).float()
+    # Same-class mask: [N, N]
+    label_mask = labels.unsqueeze(1) == labels.unsqueeze(0)
+
+    if self:
+        self_mask = ~torch.eye(len(labels), dtype=torch.bool, device=labels.device)
+        label_mask = (label_mask & self_mask)
+    label_mask = label_mask.float()
+    if label_mask.sum() == 0:
+        return torch.tensor(0.0, device=labels.device)
+
+    sim_exp = sim_matrix.exp()
 
     # numerator: sum of similarities to all same-class vectors
-    numerator = (sim_matrix * label_mask).exp().sum(dim=1)
+    numerator = (sim_exp * label_mask).sum(dim=1)
 
     # denominator: all similarities
-    denominator = sim_matrix.exp().sum(dim=1)
+    denominator = sim_exp.sum(dim=1)
 
-    loss = -torch.log(numerator / (denominator + 1e-6))
+    loss = -torch.log((numerator + 1e-6) / (denominator + 1e-6))
     return loss.mean()

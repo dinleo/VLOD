@@ -21,9 +21,9 @@ solver.optimizer = L(torch.optim.AdamW)(
 )
 
 solver.criterion = L(Stage1Criterion)(
-    align_loss_weight=0.1,
-    pos_magnitude_weight=0.05,
-    neg_magnitude_weight=0.1
+    align_weight=1,
+    contrast_weight=1,
+    magnitude_weight=1
 )
 
 solver.lr_scheduler = L(modified_coco_scheduler)(
